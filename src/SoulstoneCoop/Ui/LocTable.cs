@@ -24,6 +24,14 @@ public static partial class Loc
         ["ui.join"] = R("Join", "Entrar", "Unirse", "Rejoindre", "Beitreten", "Войти", "加入", "参加"),
         ["ui.disconnect"] = R("Disconnect", "Desconectar", "Desconectar", "Se déconnecter", "Trennen", "Отключиться", "断开连接", "切断"),
         ["ui.ip_hint"] = R("IP or code", "IP ou código", "IP o código", "IP ou code", "IP oder Code", "IP или код", "IP 或代码", "IPまたはコード"),
+        // native-look panel (docs/ui-nativa-notas.md): section titles and the player list
+        ["ui.sec_steam"] = R("Invite via Steam", "Convidar pela Steam", "Invitar por Steam", "Inviter via Steam", "Über Steam einladen", "Пригласить через Steam", "通过 Steam 邀请", "Steamで招待"),
+        ["ui.sec_ip"] = R("Direct connection", "Conexão direta", "Conexión directa", "Connexion directe", "Direktverbindung", "Прямое подключение", "直接连接", "直接接続"),
+        ["ui.players"] = R("Players ({n}/{max})", "Jogadores ({n}/{max})", "Jugadores ({n}/{max})", "Joueurs ({n}/{max})", "Spieler ({n}/{max})", "Игроки ({n}/{max})", "玩家（{n}/{max}）", "プレイヤー（{n}/{max}）"),
+        ["ui.you"] = R("you", "você", "tú", "vous", "du", "вы", "你", "あなた"),
+        ["ui.host_tag"] = R("Host", "Host", "Anfitrión", "Hôte", "Host", "Хост", "房主", "ホスト"),
+        ["ui.empty_slot"] = R("Free slot", "Vaga livre", "Plaza libre", "Place libre", "Freier Platz", "Свободное место", "空位", "空き枠"),
+        ["ui.alone"] = R("Invite friends or join a host to play together.", "Convide amigos ou entre num host pra jogar junto.", "Invita a amigos o únete a un anfitrión para jugar juntos.", "Invitez des amis ou rejoignez un hôte pour jouer ensemble.", "Lade Freunde ein oder tritt einem Host bei, um zusammen zu spielen.", "Пригласите друзей или подключитесь к хосту, чтобы играть вместе.", "邀请好友或加入房主一起游戏。", "フレンドを招待するか、ホストに参加して一緒に遊ぼう。"),
 
         // panel status
         ["st.creating_lobby"] = R("Creating the Steam lobby...", "Criando o lobby na Steam...", "Creando la sala en Steam...", "Création du salon Steam...", "Steam-Lobby wird erstellt...", "Создание лобби в Steam...", "正在创建 Steam 大厅...", "Steamロビーを作成中..."),
