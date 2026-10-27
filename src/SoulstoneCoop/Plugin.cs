@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "0.9.2";
+    public const string PluginVersion = "1.0.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;

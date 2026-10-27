@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <img width="2559" height="1079" alt="image" src="https://github.com/user-attachments/assets/e6fca67f-46f6-40bf-b67f-7081b6b863d1" />
 
 
-> **Status: alpha.** Played by two people over Steam up to 0.8.0; 3+ players and the 0.9.0 changes are untested. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.0.** Played by two people over Steam, including the new Co-op panel; 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
