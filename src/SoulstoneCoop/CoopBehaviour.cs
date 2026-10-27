@@ -140,6 +140,7 @@ public class CoopBehaviour : MonoBehaviour
             try { Ui.Loc.Tick(); }
             catch (System.Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] Loc.Tick: {ex}"); }
             Ui.CoopUi.Tick();
+            Ui.UiShot.Tick(); // debug: --coop-ui-shot
             PlayerSync.Tick(Time.unscaledDeltaTime);
             GhostOverhead.Tick(Time.unscaledDeltaTime);
             Life.PartnerHealth.Tick(Time.unscaledDeltaTime);
