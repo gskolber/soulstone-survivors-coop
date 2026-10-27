@@ -25,6 +25,9 @@ To uninstall, delete `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, 
 
 ## How to play
 
+<p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
+<p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
+
 1. Both players launch the game from Steam and stay in the main menu.
 2. **Host:** Co-op tab → **Invite friend**, and pick the friend in the Steam overlay. Without the overlay, use the Steam friends list → right-click the friend → *Invite to game*.
 3. **Guest:** accept the invite in Steam chat. The Co-op panel shows *Connected with <name> (Steam, x ms)*. If the invite doesn't arrive, the host clicks **Copy code** and the guest pastes it into the panel and clicks **Join**.
