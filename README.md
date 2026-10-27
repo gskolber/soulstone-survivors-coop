@@ -4,8 +4,8 @@ Online co-op for [Soulstone Survivors](https://store.steampowered.com/app/206602
 
 An unofficial fan mod, not affiliated with or endorsed by the game's developers. Built on [BepInEx 6](https://github.com/BepInEx/BepInEx) (IL2CPP).
 
-<img width="2559" height="1079" alt="image" src="https://github.com/user-attachments/assets/e6fca67f-46f6-40bf-b67f-7081b6b863d1" />
-
+<p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
+<p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
 > **Status: 1.0.** Played by two people over Steam, including the new Co-op panel; 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
@@ -24,9 +24,6 @@ Requirements: Windows, the game on version **1.5.3.2**, and **both players on th
 To uninstall, delete `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, the `dotnet` folder and the `BepInEx` folder from the game folder.
 
 ## How to play
-
-<p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
-<p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
 1. Both players launch the game from Steam and stay in the main menu.
 2. **Host:** Co-op tab → **Invite friend**, and pick the friend in the Steam overlay. Without the overlay, use the Steam friends list → right-click the friend → *Invite to game*.
