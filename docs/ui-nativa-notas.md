@@ -64,3 +64,22 @@ Testado assim: 1600x900 (en), 1280x720 (pt-BR), 1920x1080 (en), 2560x1080 ultraw
 
 - Num perfil novo, com abas ainda escondidas (`HandleButtonState`), as posições continuam as do jogo deslocadas meio passo; não testado.
 - O hover simulado no modo de screenshot não acende o sprite (falta o `EventSystem` de verdade); no jogo com mouse acende.
+
+## Aviso de nova versão (1.0)
+
+`Ui/UpdateCheck.cs` + o pop-up em `Ui/CoopUi.cs` (`BuildUpdatePopup`).
+
+- No `Plugin.Load`, uma `Task` faz um GET em `api.github.com/repos/gskolber/soulstone-survivors-coop/releases/latest` (`HttpClient`, timeout de 5 s, `User-Agent: SoulstoneCoop/<versão>`, `Accept: application/vnd.github+json`) e lê só `tag_name` e `html_url` (`System.Text.Json`). Qualquer falha (sem rede, rate limit, não-200, JSON ruim) vira uma linha de log `[update]` e nada mais. Drafts e prereleases nunca são "latest".
+- Compara tirando o "v" e o sufixo `-pre`/`+build`, com `System.Version`. Só mostra se a última for maior que `PluginVersion` e diferente de `[Updates] SkippedVersion`.
+- O resultado passa pra thread principal por um campo `volatile`, assim como a linha de log, que é escrita na thread principal. O pop-up aparece uma vez por execução, quando o menu principal fica parado por 1 s: nunca durante uma partida ou um carregamento, e não por cima do painel Co-op (espera ele fechar).
+- O pop-up tem o mesmo estilo do painel (moldura, título, X). Os botões são "Abrir página" (`Application.OpenURL`, só se a URL começar com `https://github.com/gskolber/soulstone-survivors-coop/`; senão abre `.../releases/latest` do repositório), "Agora não" e "Não lembrar desta versão", que grava a tag em `[Updates] SkippedVersion` e é um botão só de texto (`GameLook.Style.Text`, como o Sim/Cancelar do pop-up de sair). Esc = Agora não (o mesmo prefix em `QuitScreenPanel.Open`).
+- Config: `[Updates] CheckForUpdates` (padrão `true`; `false` = nenhuma requisição) e `[Updates] SkippedVersion`.
+- Debug: `--coop-fake-latest 1.0.1` (ou `=1.0.1`) pula a rede e finge a última versão. `--coop-update-url <url>` troca o endpoint, pra testar falhas. No modo `--coop-ui-shot`, se o pop-up estiver aberto, sai primeiro o `00-update-popup.png` e depois ele é fechado pelo caminho do Esc.
+
+Verificado com o modo de screenshot:
+- `--coop-fake-latest 1.0.1` em en e pt-BR: o pop-up aparece, e o Esc fecha sem abrir o "Sair do jogo?".
+- Sem fake, com rede: "latest is 0.9.2, this is 1.0.0 - up to date", sem pop-up.
+- Endpoint inválido: `HttpRequestException ... - skipped`, sem pop-up.
+- `SkippedVersion = v1.0.1` com fake 1.0.1: "the player skipped it", sem pop-up.
+
+Não testado com clique: "Abrir página" (abrir o navegador) e a gravação do `SkippedVersion` pelo botão.

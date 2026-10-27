@@ -18,7 +18,7 @@ namespace SoulstoneCoop.Ui;
 /// </summary>
 internal static class GameLook
 {
-    internal enum Style { Primary, Secondary, Close }
+    internal enum Style { Primary, Secondary, Close, Text }
 
     private static Dictionary<string, Sprite>? _sprites;
     private static GameObject? _buttonTemplate;
@@ -181,8 +181,25 @@ internal static class GameLook
             float side = style == Style.Primary ? 0.13f : 0.11f;
             lrt.offsetMin = Vector2.zero;
             lrt.offsetMax = Vector2.zero;
+            if (style == Style.Text) side = 0f;
             lrt.anchorMin = new Vector2(side, 0.1f);
             lrt.anchorMax = new Vector2(1f - side, 0.9f);
+        }
+        if (style == Style.Text && img != null && t != null)
+        {
+            // Like the Yes/Cancel of the game's Quit pop-up: just the text, white → #FFC700 on hover. The image stays
+            // (transparent) as the click area.
+            img.sprite = null;
+            img.color = Color.clear;
+            b.transition = Selectable.Transition.ColorTint;
+            b.targetGraphic = t;
+            var cb = b.colors;
+            cb.normalColor = Color.white;
+            cb.highlightedColor = new Color(1f, 0.78f, 0f, 1f);
+            cb.selectedColor = cb.highlightedColor;
+            cb.pressedColor = new Color(0.78f, 0.78f, 0.78f, 1f);
+            cb.disabledColor = new Color(0.78f, 0.78f, 0.78f, 0.5f);
+            b.colors = cb;
         }
         return b;
     }
