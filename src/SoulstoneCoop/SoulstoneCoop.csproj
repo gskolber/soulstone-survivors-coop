@@ -111,6 +111,10 @@
       <HintPath>$(Interop)\UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(Interop)\UnityEngine.ScreenCaptureModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>$(Interop)\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>

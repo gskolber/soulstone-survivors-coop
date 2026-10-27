@@ -163,6 +163,7 @@ public class Plugin : BasePlugin
             else if (args[i] == "--coop-sim-jitter" && i + 1 < args.Length && int.TryParse(args[i + 1], out var jit)) _simJitter = jit;
             else if (args[i] == "--coop-sim-loss" && i + 1 < args.Length && int.TryParse(args[i + 1], out var loss)) _simLoss = loss;
         }
+        Ui.UiShot.ParseArgs(args);
         if (HostArg || ConnectAddressArg != null || FakeVersionArg != null || NameArg != null)
             Log.LogInfo($"Launch args: host={HostArg} connect={ConnectAddressArg ?? "-"} fakeVersion={FakeVersionArg ?? "-"} name={NameArg ?? "-"}");
     }
