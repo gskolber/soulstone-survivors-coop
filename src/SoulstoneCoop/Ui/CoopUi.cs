@@ -111,6 +111,12 @@ public static class CoopUi
         if (_failed) return;
         try
         {
+            try
+            {
+                var found = UpdateCheck.Poll();
+                if (found != null) _update = found;
+            }
+            catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][update] {ex.Message}"); }
             _sceneCheckTimer -= Time.unscaledDeltaTime;
             if (_sceneCheckTimer <= 0f)
             {
@@ -138,6 +144,7 @@ public static class CoopUi
                 Plugin.StaticLog.LogInfo("[SoulstoneCoop][ui] IP field got keyboard focus.");
             }
             RefreshBanner();
+            TickUpdatePopup();
         }
         catch (Exception ex)
         {
@@ -328,6 +335,12 @@ public static class CoopUi
     /// open, close the panel instead. True = let the game open its quit panel.</summary>
     internal static bool BeforeQuitPanelOpen()
     {
+        if (_updateOpen)
+        {
+            Plugin.StaticLog.LogInfo("[SoulstoneCoop][update] Cancel pressed: not now.");
+            CloseUpdate();
+            return false;
+        }
         if (!_inMenu || !_panelOpen) return true;
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][ui] Cancel pressed: closing the Co-op panel.");
         _panelOpen = false;
@@ -764,6 +777,132 @@ public static class CoopUi
         Loc.CheckGlyphs(_font, "co-op UI");
     }
 
+    // ---------------- "new version" pop-up (1.0, Ui/UpdateCheck.cs) ----------------
+
+    private static UpdateCheck.Release? _update;
+    private static bool _updateOpen, _updateDone;
+    private static float _menuIdle, _updT;
+    private static GameObject? _updPopup;
+    private static CanvasGroup? _updGroup;
+    private static RectTransform? _updWindow;
+    private static TextMeshProUGUI? _updBody;
+    internal static bool UpdatePopupOpen => _updateOpen;
+    internal static void DebugCloseUpdate() => CloseUpdate();
+
+    /// <summary>Shown once per launch, the first time the main menu is idle for a second: not in a run or while
+    /// loading one, not over the Co-op panel (it waits for it to close).</summary>
+    private static void TickUpdatePopup()
+    {
+        bool idle = _inMenu && MenuReady && !_panelOpen && _openT <= 0f && !CoopSession.LocalInRun && !CoopSession.LocalLoading;
+        _menuIdle = idle ? _menuIdle + Time.unscaledDeltaTime : 0f;
+        if (_update != null && !_updateDone && !_updateOpen && _menuIdle > 1f) OpenUpdate();
+        if (_updateOpen && (!_inMenu || CoopSession.LocalLoading)) CloseUpdate();
+
+        if (_updPopup == null) return;
+        float target = _updateOpen ? 1f : 0f;
+        if (_updT == target) return;
+        _updT = Mathf.MoveTowards(_updT, target, Time.unscaledDeltaTime / 0.15f);
+        if (_updPopup.activeSelf != _updT > 0f) _updPopup.SetActive(_updT > 0f);
+        _updGroup!.alpha = _updT;
+        _updGroup.interactable = _updateOpen;
+        _updGroup.blocksRaycasts = _updateOpen;
+        float e = 1f - (1f - _updT) * (1f - _updT);
+        _updWindow!.anchoredPosition = new Vector2(0f, -(1f - e) * 40f);
+    }
+
+    private static void OpenUpdate()
+    {
+        if (_updPopup == null) BuildUpdatePopup(_root!.GetComponent<RectTransform>());
+        _updateOpen = true;
+        _updateDone = true;
+        SetUpdateBody();
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][update] Showing the new-version pop-up ({_update!.Tag}).");
+    }
+
+    private static void CloseUpdate() => _updateOpen = false;
+
+    private static void SetUpdateBody()
+    {
+        if (_updBody == null || _update == null) return;
+        _updBody.text = Loc.T("up.body", ("latest", $"<color={Gold}>{_update.Version}</color>"), ("current", Plugin.PluginVersion));
+    }
+
+    private static void OnUpdateOpenPage()
+    {
+        string url = _update?.Url ?? "";
+        if (!url.StartsWith(UpdateCheck.RepoUrl, StringComparison.Ordinal)) url = UpdateCheck.RepoUrl + "releases/latest";
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][update] Open page: {url}");
+        Application.OpenURL(url);
+        CloseUpdate();
+    }
+
+    private static void OnUpdateSkip()
+    {
+        if (_update != null) UpdateCheck.Skip(_update);
+        CloseUpdate();
+    }
+
+    private static void BuildUpdatePopup(RectTransform rootRt)
+    {
+        const float W = 1000f, H = 420f;
+        var pr = GameLook.Rect(rootRt, "CoopUpdate");
+        GameLook.Stretch(pr, 0f, 0f, 0f, 0f);
+        var pc = pr.gameObject.AddComponent<Canvas>();
+        pc.overrideSorting = true;
+        pc.sortingOrder = 501; // over the Co-op panel, under the game's Quit (502) and Options (505)
+        pr.gameObject.AddComponent<GraphicRaycaster>();
+        _updGroup = pr.gameObject.AddComponent<CanvasGroup>();
+        _updGroup.alpha = 0f;
+        _updPopup = pr.gameObject;
+
+        var fade = GameLook.Rect(pr, "Black-Fade");
+        GameLook.Stretch(fade, 0f, 0f, 0f, 0f);
+        fade.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.82f);
+
+        var win = GameLook.Img(pr, "Window", "Menu_Frame_NotTransparent").rectTransform;
+        win.GetComponent<Image>().raycastTarget = true;
+        Place(win, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(W, H));
+        win.pivot = new Vector2(0.5f, 0.5f);
+        _updWindow = win;
+
+        var glow = GameLook.Img(win, "Glow", "Yellow_Glow_01", Image.Type.Simple, Color.clear).rectTransform;
+        glow.anchorMin = new Vector2(0f, 1f);
+        glow.anchorMax = new Vector2(1f, 1f);
+        glow.pivot = new Vector2(0.5f, 1f);
+        glow.anchoredPosition = new Vector2(0f, -6f);
+        glow.sizeDelta = new Vector2(-12f, 260f);
+        glow.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.55f);
+
+        var titleFrame = GameLook.Img(win, "Title-Frame", "Title_Frame", Image.Type.Simple, Color.clear).rectTransform;
+        titleFrame.anchorMin = titleFrame.anchorMax = new Vector2(0.5f, 1f);
+        titleFrame.pivot = new Vector2(0.5f, 0.5f);
+        titleFrame.anchoredPosition = new Vector2(0f, 4f);
+        titleFrame.sizeDelta = new Vector2(560f, 94f);
+        var title = GameLook.Text(titleFrame, "Title", Loc.T("up.title"), 40f, TextAlignmentOptions.Center);
+        GameLook.AutoSize(title, 40f);
+        GameLook.Stretch(title.rectTransform, 80f, 14f, 80f, 14f);
+        _labels.Add((title, "up.title"));
+
+        var close = GameLook.Button(win, "Close", Style.Close, "", CloseUpdate, 30f, "UIClose");
+        Place(close.GetComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(-22f, -22f), new Vector2(52f, 52f));
+
+        _updBody = GameLook.Text(win, "Body", "", 32f, TextAlignmentOptions.Center);
+        _updBody.enableWordWrapping = true;
+        GameLook.AutoSize(_updBody, 32f, 0.6f);
+        GameLook.TopLeft(_updBody.rectTransform, 70f, 70f, W - 140f, 150f);
+
+        // Open page | Not now | Don't remind me for this version
+        var open = Track(GameLook.Button(win, "Open", Style.Primary, Loc.T("up.open"), OnUpdateOpenPage, 30f), "up.open");
+        GameLook.TopLeft(open.GetComponent<RectTransform>(), 233f, 244f, 280f, 64f);
+        var later = Track(GameLook.Button(win, "Later", Style.Secondary, Loc.T("up.later"), CloseUpdate, 26f), "up.later");
+        GameLook.TopLeft(later.GetComponent<RectTransform>(), 537f, 250f, 230f, 52f);
+        var skip = Track(GameLook.Button(win, "Skip", Style.Text, Loc.T("up.skip"), OnUpdateSkip, 24f), "up.skip");
+        GameLook.TopLeft(skip.GetComponent<RectTransform>(), 200f, 334f, 600f, 40f);
+
+        if (_font != null) foreach (var t in pr.GetComponentsInChildren<TextMeshProUGUI>(true)) t.font = _font;
+        _updPopup.SetActive(false);
+    }
+
     private static void BuildPanel(RectTransform rootRt)
     {
         // Own canvas under the game's Options (505) and Quit (502) pop-ups, over the menu (5).
@@ -931,6 +1070,7 @@ public static class CoopUi
         }
         foreach (var (t, key) in _labels) if (t != null) t.text = Loc.T(key);
         foreach (var r in _rows) r.Key = "";
+        if (_updateOpen) SetUpdateBody();
         _lastStatus = "";
     }
 

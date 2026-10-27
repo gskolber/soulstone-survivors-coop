@@ -82,7 +82,20 @@ public static class UiShot
             case 1:
                 if (Gallery != null) { ShowGallery(); _step = 100; _wait = 1f; return; }
                 if (Demo) { Time.captureFramerate = DemoFps; _step = 200; _frame = 0; return; }
+                if (CoopUi.UpdatePopupOpen && !_updateShot)
+                {
+                    // --coop-fake-latest: the new-version pop-up is up first; shoot it, "Not now", go on.
+                    _updateShot = true;
+                    Shot("00-update-popup");
+                    _step = 300;
+                    _wait = 0.3f;
+                    return;
+                }
                 Shot("01-menu-tab"); Next(0.5f); return;
+            case 300: // Esc = "Not now": the game asks for its Quit pop-up, the update pop-up closes instead
+                UnityEngine.Object.FindObjectOfType<MenuManager>()?.QuitScreenPanel?.Open();
+                if (CoopUi.UpdatePopupOpen) CoopUi.DebugCloseUpdate();
+                _step = 1; _wait = 1f; return;
             case 2: CoopUi.DebugHover("tab", true); Next(0.6f); return;
             case 3: Shot("02-menu-tab-hover"); CoopUi.DebugHover("tab", false); Next(0.3f); return;
             case 4: CoopUi.DebugOpen(true); Next(1.5f); return;
@@ -183,6 +196,7 @@ public static class UiShot
     internal static bool Demo;
     private const int DemoFps = 30;
     private static int _frame;
+    private static bool _updateShot;
     private const string DemoIp = "192.168.0.15";
 
     private static void DemoFrame()

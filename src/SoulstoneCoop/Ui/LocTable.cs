@@ -31,6 +31,19 @@ public static partial class Loc
         ["ui.you"] = R("you", "você", "tú", "vous", "du", "вы", "你", "あなた"),
         ["ui.host_tag"] = R("Host", "Host", "Anfitrión", "Hôte", "Host", "Хост", "房主", "ホスト"),
         ["ui.empty_slot"] = R("Free slot", "Vaga livre", "Plaza libre", "Place libre", "Freier Platz", "Свободное место", "空位", "空き枠"),
+        // update notice (Ui/UpdateCheck.cs)
+        ["up.title"] = R("New version available", "Nova versão disponível", "Nueva versión disponible", "Nouvelle version disponible", "Neue Version verfügbar", "Доступна новая версия", "有新版本可用", "新しいバージョンがあります"),
+        ["up.body"] = R("Soulstone Coop {latest} is available (you have {current}).\nEveryone in a lobby needs the same version.",
+            "O Soulstone Coop {latest} está disponível (você tem a {current}).\nTodos num lobby precisam da mesma versão.",
+            "Soulstone Coop {latest} está disponible (tienes la {current}).\nTodos en una sala necesitan la misma versión.",
+            "Soulstone Coop {latest} est disponible (vous avez la {current}).\nTout le monde dans un salon doit avoir la même version.",
+            "Soulstone Coop {latest} ist verfügbar (du hast {current}).\nAlle in einer Lobby brauchen dieselbe Version.",
+            "Доступна версия Soulstone Coop {latest} (у вас {current}).\nВсем в лобби нужна одна и та же версия.",
+            "Soulstone Coop {latest} 已发布（你的版本是 {current}）。\n同一大厅中的所有人需要使用相同版本。",
+            "Soulstone Coop {latest} が公開されています（現在は {current}）。\nロビーの全員が同じバージョンである必要があります。"),
+        ["up.open"] = R("Open page", "Abrir página", "Abrir página", "Ouvrir la page", "Seite öffnen", "Открыть страницу", "打开页面", "ページを開く"),
+        ["up.later"] = R("Not now", "Agora não", "Ahora no", "Plus tard", "Nicht jetzt", "Не сейчас", "以后再说", "後で"),
+        ["up.skip"] = R("Don't remind me for this version", "Não lembrar desta versão", "No recordar esta versión", "Ne plus rappeler pour cette version", "Für diese Version nicht mehr erinnern", "Не напоминать об этой версии", "此版本不再提醒", "このバージョンは通知しない"),
         ["ui.alone"] = R("Invite friends or join a host to play together.", "Convide amigos ou entre num host pra jogar junto.", "Invita a amigos o únete a un anfitrión para jugar juntos.", "Invitez des amis ou rejoignez un hôte pour jouer ensemble.", "Lade Freunde ein oder tritt einem Host bei, um zusammen zu spielen.", "Пригласите друзей или подключитесь к хосту, чтобы играть вместе.", "邀请好友或加入房主一起游戏。", "フレンドを招待するか、ホストに参加して一緒に遊ぼう。"),
 
         // panel status

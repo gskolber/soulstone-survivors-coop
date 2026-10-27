@@ -83,6 +83,8 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | `[Coop] ReplicaCastRadius` | `60` | Don't draw skills of partners farther than this |
 | `[Coop] LobbyType` | `FriendsOnly` | `Public` if friends of guests can't join |
 | `[Coop] SenderClock` | `false` | Experimental: smoother remote movement on jittery connections |
+| `[Updates] CheckForUpdates` | `true` | Check GitHub at startup and say in the main menu when a newer version is out (never downloads anything); `false` = no request at all |
+| `[Updates] SkippedVersion` | `""` | Set by "Don't remind me for this version"; empty = remind about any newer release |
 | `[Debug] SimulateLatencyMs`, `SimulateJitterMs`, `SimulatePacketLossPercent` | `0` | Simulate a bad network for testing |
 
 ## Building from source

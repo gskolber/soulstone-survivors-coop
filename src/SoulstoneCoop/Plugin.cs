@@ -35,6 +35,7 @@ public class Plugin : BasePlugin
         Log.LogInfo($"{PluginName} {PluginVersion} loading...");
         Net.LevelUpPolicy.Bind(Config);
         Ui.Loc.Init(Config); // docs/i18n-notas.md
+        Ui.UpdateCheck.Bind(Config); // 1.0: "new version" notice
 
         AutoHost = Config.Bind("Debug", "AutoHost", false,
             "Start hosting automatically when the main menu opens (instead of the Co-op panel or Insert).");
@@ -71,6 +72,7 @@ public class Plugin : BasePlugin
         _simJitter = simJitter.Value;
         _simLoss = simLoss.Value;
         ParseLaunchArgs();
+        Ui.UpdateCheck.Start(); // worker thread, fails silently
         Net.NetSim.Configure(_simLatency, _simJitter, _simLoss);
         Net.NetSim.LogBanner();
 
