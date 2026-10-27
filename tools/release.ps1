@@ -74,11 +74,31 @@ if ($LASTEXITCODE -ne 0) { Fail "package.ps1 failed" }
 $zip = Join-Path $RepoRoot "dist\SoulstoneCoop-$Version.zip"
 if (-not (Test-Path $zip)) { Fail "zip not found: $zip" }
 
+# Checksum: published next to the zip and in the notes, so players can tell the official zip from a re-upload.
+$zipName = Split-Path $zip -Leaf
+$sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+$shaFile = "$zip.sha256"
+[IO.File]::WriteAllText($shaFile, "$sha  $zipName`n", (New-Object Text.UTF8Encoding($false)))
+Step "SHA-256 $sha"
+
+$checksumSection = @"
+
+## Verify your download
+
+Only download Soulstone Coop from this repository's [Releases](https://github.com/gskolber/soulstone-survivors-coop/releases). Copies, re-uploads or ports hosted elsewhere are not checked by the author.
+
+``SHA-256 ($zipName): $sha``
+
+In PowerShell: ``Get-FileHash .\$zipName`` must print the same hash (case doesn't matter).
+"@
 $notesFile = Join-Path $RepoRoot "docs\releases\$Version.md"
-$notesArgs = if (Test-Path $notesFile) { @('--notes-file', $notesFile) } else { @('--generate-notes') }
+$notesOut = Join-Path $RepoRoot "dist\release-notes-$Version.md"
+$body = if (Test-Path $notesFile) { [IO.File]::ReadAllText($notesFile).TrimEnd() } else { '' }
+[IO.File]::WriteAllText($notesOut, ($body + "`n" + $checksumSection), (New-Object Text.UTF8Encoding($false)))
+$notesArgs = if (Test-Path $notesFile) { @('--notes-file', $notesOut) } else { @('--generate-notes', '--notes-file', $notesOut) }
 
 if ($DryRun) {
-    Step "Dry run: would tag $Tag at $local and publish $zip with $($notesArgs -join ' ')"
+    Step "Dry run: would tag $Tag at $local and publish $zip + $(Split-Path $shaFile -Leaf) with notes $notesOut"
     exit 0
 }
 
@@ -89,7 +109,7 @@ Invoke-Git tag -a $Tag -m "Soulstone Coop $Version"
 Invoke-Git push origin $Tag
 
 Step "Creating the GitHub release"
-$relArgs = @('release', 'create', $Tag, $zip, '--title', "Soulstone Coop $Version", '--verify-tag') + $notesArgs
+$relArgs = @('release', 'create', $Tag, $zip, $shaFile, '--title', "Soulstone Coop $Version", '--verify-tag') + $notesArgs
 if ($Prerelease) { $relArgs += '--prerelease' }
 if ($Draft) { $relArgs += '--draft' }
 & $gh @relArgs

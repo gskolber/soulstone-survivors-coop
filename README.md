@@ -8,6 +8,8 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 
 ## Install
 
+> **Only download the mod from this repository's [Releases](../../releases).** Copies, re-uploads and ports hosted anywhere else are not made or checked by the author and could contain anything. Each release lists the zip's SHA-256: check it with `Get-FileHash .\SoulstoneCoop-<version>.zip` in PowerShell. See [SECURITY.md](SECURITY.md).
+
 1. Download the latest `SoulstoneCoop-<version>.zip` from [Releases](../../releases).
 2. Close the game. In Steam: right-click **Soulstone Survivors → Manage → Browse local files**.
 3. Extract the zip into that folder. `winhttp.dll` and the `BepInEx` folder must end up **next to** `Soulstone Survivors.exe`, not inside a subfolder.
