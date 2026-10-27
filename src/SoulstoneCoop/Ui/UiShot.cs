@@ -24,6 +24,7 @@ public static class UiShot
 
     internal static void ParseArgs(string[] args)
     {
+        foreach (var a in args) if (a == "--coop-ui-demo") Demo = true;
         for (int i = 0; i + 1 < args.Length; i++)
         {
             if (args[i] == "--coop-ui-shot") Dir = args[i + 1];
@@ -80,6 +81,7 @@ public static class UiShot
                 return;
             case 1:
                 if (Gallery != null) { ShowGallery(); _step = 100; _wait = 1f; return; }
+                if (Demo) { Time.captureFramerate = DemoFps; _step = 200; _frame = 0; return; }
                 Shot("01-menu-tab"); Next(0.5f); return;
             case 2: CoopUi.DebugHover("tab", true); Next(0.6f); return;
             case 3: Shot("02-menu-tab-hover"); CoopUi.DebugHover("tab", false); Next(0.3f); return;
@@ -105,6 +107,7 @@ public static class UiShot
                 return;
             case 14: Shot("11-menu-banner"); Next(0.5f); return;
             case 15: Finish(); return;
+            case 200: DemoFrame(); return;
             case 100: Shot("gallery"); Next(0.5f); return;
             case 101: Finish(); return;
         }
@@ -170,6 +173,42 @@ public static class UiShot
             lrt.sizeDelta = new Vector2(cw, 26f);
         }
 
+    }
+
+    // ---------------- demo video (--coop-ui-demo) ----------------
+
+    /// <summary>--coop-ui-demo (with --coop-ui-shot &lt;folder&gt;): a scripted ~13 s tour of the tab and the panel,
+    /// one PNG per frame with the game's clock locked to <see cref="DemoFps"/> (Time.captureFramerate), so the frames
+    /// make a smooth video whatever the capture costs (ffmpeg -framerate 30 -i frame_%04d.png).</summary>
+    internal static bool Demo;
+    private const int DemoFps = 30;
+    private static int _frame;
+    private const string DemoIp = "192.168.0.15";
+
+    private static void DemoFrame()
+    {
+        int f = _frame;
+        if (f == 45) CoopUi.DebugHighlight("tab", true);
+        if (f == 62) { CoopUi.DebugHighlight("tab", false); CoopUi.DebugOpen(true); }
+        if (f == 110) { CoopUi.DebugFocusIp(); CoopUi.DebugSetIp(""); }
+        if (f > 110 && f <= 110 + DemoIp.Length * 3 && (f - 110) % 3 == 0) CoopUi.DebugSetIp(DemoIp.Substring(0, (f - 110) / 3));
+        if (f == 165) CoopUi.DebugHighlight("invite", true);
+        if (f == 180) { CoopUi.DebugHighlight("invite", false); CoopUi.DebugFake = CoopUi.FakeState.Hosting; }
+        if (f == 225) { CoopUi.DebugFakePlayers = 2; CoopUi.DebugFake = CoopUi.FakeState.Connected; }
+        if (f == 250) CoopUi.DebugFakePlayers = 3;
+        if (f == 275) CoopUi.DebugFakePlayers = 4;
+        if (f == 300) CoopUi.DebugFakePlayers = 5;
+        if (f == 355) UnityEngine.Object.FindObjectOfType<MenuManager>()?.QuitScreenPanel?.Open(); // = Esc
+        if (f == 400)
+        {
+            Time.captureFramerate = 0;
+            CoopUi.DebugFake = CoopUi.FakeState.None;
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][shot] Demo: {f} frames.");
+            Finish();
+            return;
+        }
+        ScreenCapture.CaptureScreenshot(Path.Combine(Dir!, $"frame_{f:D4}.png"));
+        _frame++;
     }
 
     /// <summary>--coop-ui-shot-lang: the game's own language switch (its fonts too), not saved to its prefs.</summary>

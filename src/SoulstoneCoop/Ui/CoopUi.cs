@@ -81,6 +81,7 @@ public static class CoopUi
     // ---------------- debug hooks (UiShot, --coop-ui-shot) ----------------
     internal enum FakeState { None, Hosting, Connected, Client, Full, Error }
     internal static FakeState DebugFake;
+    internal static int DebugFakePlayers = 4;
     internal static bool MenuReady => _tab != null && _tab.activeInHierarchy && _tab.GetComponent<CanvasGroup>()?.alpha > 0.99f;
     internal static void DebugOpen(bool open) { if (_panelOpen != open) OnToggle(); }
     internal static void DebugHover(string what, bool on)
@@ -91,6 +92,15 @@ public static class CoopUi
         var sel = go.GetComponent<Selectable>();
         if (sel != null) { if (on) sel.OnPointerEnter(ped); else sel.OnPointerExit(ped); }
     }
+    /// <summary>The hover look without a pointer: the button's highlighted sprite as override.</summary>
+    internal static void DebugHighlight(string what, bool on)
+    {
+        var go = what == "tab" ? _tab : what == "invite" ? _inviteButton?.gameObject : what == "join" ? _joinButton?.gameObject : null;
+        var b = go != null ? go.GetComponent<Button>() : null;
+        var img = b != null ? b.targetGraphic?.TryCast<Image>() : null;
+        if (img != null) img.overrideSprite = on ? b!.spriteState.highlightedSprite : null;
+    }
+    internal static void DebugSetIp(string text) { if (_ipField != null) { _ipField.text = text; _ipField.caretPosition = text.Length; } }
     internal static void DebugFocusIp() { if (_ipField != null) { _ipField.Select(); _ipField.ActivateInputField(); } }
 
     /// <summary>The IP field has keyboard focus: debug hotkeys (Insert/Delete/PageDown) must not fire.</summary>
@@ -531,12 +541,23 @@ public static class CoopUi
                 rows.Add(P(me, myChar, true, true, -1, LobbyPlace.Menu)); Pad(8);
                 return (Loc.T("st.lobby_open", ("max", 8)), rows, false, true, 1, 8);
             case FakeState.Connected:
-                rows.Add(P(me, myChar, true, true, -1, LobbyPlace.Menu));
-                rows.Add(P("Amigo", "Barbarian", false, false, 42, LobbyPlace.Menu));
-                rows.Add(P("Outra pessoa", "Pyromancer", false, false, 118, LobbyPlace.Loading));
-                rows.Add(P("Longe", "Necromancer", false, false, 260, LobbyPlace.InRun, unstable: true));
+            {
+                // DebugFakePlayers: how many have joined so far (the demo video adds them one by one).
+                var all = new[]
+                {
+                    P(me, myChar, true, true, -1, LobbyPlace.Menu),
+                    P("Amigo", "Barbarian", false, false, 42, LobbyPlace.Menu),
+                    P("Outra pessoa", "Pyromancer", false, false, 118, LobbyPlace.Loading),
+                    P("Longe", "Necromancer", false, false, 260, LobbyPlace.InRun, unstable: true),
+                    P("Marina", "Paladin", false, false, 35, LobbyPlace.Menu),
+                };
+                int n = Mathf.Clamp(DebugFakePlayers, 1, all.Length);
+                for (int i = 0; i < n; i++) rows.Add(all[i]);
                 Pad(8);
-                return (Loc.T("st.hosting", ("kind", "Steam"), ("n", 4), ("max", 8)) + "\n" + Loc.T("st.wait_all_menu"), rows, false, true, 4, 8);
+                bool allMenu = true;
+                foreach (var r in rows) allMenu &= r.Empty || r.Place == LobbyPlace.Menu;
+                return (Loc.T("st.hosting", ("kind", "Steam"), ("n", n), ("max", 8)) + "\n" + Loc.T(allMenu ? "st.all_in_menu" : "st.wait_all_menu"), rows, false, true, n, 8);
+            }
             case FakeState.Client:
                 rows.Add(P("Anfitrião", "Paladin", true, false, 64, LobbyPlace.Menu));
                 rows.Add(P(me, myChar, false, true, -1, LobbyPlace.Menu));

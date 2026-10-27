@@ -40,6 +40,13 @@ Pedido: "dá para melhorar o botão e o form do coop? ele está extremamente fei
 - Fecha o jogo no fim (ou depois de 180 s).
 - Opções: `--coop-ui-shot-tag <prefixo>` (nome dos arquivos), `--coop-ui-shot-lang <código>` (troca o idioma **do jogo** sem salvar nas preferências: `pt-BR`, `ru`, `zh`…), `--coop-ui-shot-gallery a,b,c` (desenha esses sprites numa grade com o nome e tira uma foto: pra escolher peças).
 
+**Vídeo de demonstração:** `--coop-ui-demo --coop-ui-shot <pasta>` roda um roteiro fixo de ~13 s (aba com hover, painel abrindo, IP digitado, hospedar, 4 amigos entrando um a um, Esc fechando) com o relógio do jogo travado em 30 fps (`Time.captureFramerate`) e salva um PNG por quadro. Depois:
+
+```
+ffmpeg -framerate 30 -i frame_%04d.png -c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart coop-ui-demo.mp4
+ffmpeg -framerate 30 -i frame_%04d.png -vf "fps=15,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" coop-ui-demo.gif
+```
+
 Testado assim: 1600x900 (en), 1280x720 (pt-BR), 1920x1080 (en), 2560x1080 ultrawide (ru).
 
 ## Roteiro de teste (com gente)
