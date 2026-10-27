@@ -56,7 +56,10 @@ Invoke-Git fetch --quiet origin --tags
 $local = (& git rev-parse HEAD).Trim()
 $remote = (& git rev-parse origin/master).Trim()
 if ($local -ne $remote) { Fail "master ($local) is not in sync with origin/master ($remote); push or pull first" }
-if (& git tag --list $Tag) { Fail "tag $Tag already exists; bump PluginVersion first" }
+if (& git tag --list $Tag) {
+    if ($DryRun) { Write-Warning "tag $Tag already exists (dry run continues; a real release needs a PluginVersion bump)" }
+    else { Fail "tag $Tag already exists; bump PluginVersion first" }
+}
 
 & $gh auth status *> $null
 if ($LASTEXITCODE -ne 0) { Fail "gh is not logged in (gh auth login)" }
