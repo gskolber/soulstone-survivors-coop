@@ -214,7 +214,8 @@ ALTERNATIVA: POR IP
 
 DESINSTALAR
 - Na pasta do jogo, apague: winhttp.dll, doorstop_config.ini, .doorstop_version, a pasta dotnet,
-  a pasta BepInEx, este LEIA-ME.txt e o README.txt. Só isso: o jogo volta ao normal.
+  a pasta BepInEx, este LEIA-ME.txt, o README.txt, o SoulstoneCoop-LICENSE.txt e o
+  THIRD-PARTY-NOTICES.txt. Só isso: o jogo volta ao normal.
 - Obs.: o "Verificar integridade dos arquivos" da Steam conserta arquivos do jogo, mas NÃO apaga
   os do mod. Pra tirar o mod, apague os arquivos acima.
 
@@ -271,7 +272,8 @@ ALTERNATIVE: BY IP
 
 UNINSTALL
 - In the game folder, delete: winhttp.dll, doorstop_config.ini, .doorstop_version, the dotnet folder,
-  the BepInEx folder, LEIA-ME.txt and README.txt. That's it.
+  the BepInEx folder, LEIA-ME.txt, README.txt, SoulstoneCoop-LICENSE.txt and THIRD-PARTY-NOTICES.txt.
+  That's it.
 - Note: Steam's "Verify integrity of game files" does NOT remove the mod's files.
 
 SOMETHING WENT WRONG?
@@ -279,6 +281,13 @@ SOMETHING WENT WRONG?
   game again (it's rewritten every launch).
 "@
 [IO.File]::WriteAllText((Join-Path $Stage 'README.txt'), ($readmeEn -replace "`r?`n", "`r`n"), (New-Object Text.UTF8Encoding($true)))
+
+# The mod's MIT license and the notices of the bundled third-party software (BepInEx/Il2CppInterop are LGPL).
+foreach ($pair in @(@('LICENSE', 'SoulstoneCoop-LICENSE.txt'), @('THIRD-PARTY-NOTICES.md', 'THIRD-PARTY-NOTICES.txt'))) {
+    $src = Join-Path $RepoRoot $pair[0]
+    if (-not (Test-Path $src)) { Fail "falta $($pair[0]) na raiz do repo" }
+    Copy-Item -LiteralPath $src -Destination (Join-Path $Stage $pair[1])
+}
 
 # ---------------------------------------------------------------- zip
 
@@ -299,7 +308,7 @@ try {
 # Lista branca: qualquer coisa fora disso no zip e erro (interop, unity-libs, cache, logs,
 # steam_appid.txt, arquivos do jogo, outros plugins como o UnityExplorer...).
 $allowed = @(
-    '^winhttp\.dll$', '^doorstop_config\.ini$', '^\.doorstop_version$', '^LEIA-ME\.txt$', '^README\.txt$',
+    '^winhttp\.dll$', '^doorstop_config\.ini$', '^\.doorstop_version$', '^LEIA-ME\.txt$', '^README\.txt$', '^SoulstoneCoop-LICENSE\.txt$', '^THIRD-PARTY-NOTICES\.txt$',
     '^dotnet/', '^BepInEx/core/',
     ('^BepInEx/plugins/SoulstoneCoop/(' + (($PluginFiles | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'),
     '^BepInEx/config/BepInEx\.cfg$', ('^BepInEx/config/' + [regex]::Escape("$PluginGuid.cfg") + '$')
@@ -312,7 +321,7 @@ try {
     $total = ($zip.Entries | Measure-Object Length -Sum).Sum
 } finally { $zip.Dispose() }
 if ($bad) { Remove-Item $zipPath -Force; Fail ("entradas proibidas no zip (zip apagado):`n  " + ($bad -join "`n  ")) }
-foreach ($need in @('winhttp.dll', 'doorstop_config.ini', 'BepInEx/core/BepInEx.Unity.IL2CPP.dll', 'dotnet/coreclr.dll', 'LEIA-ME.txt', 'README.txt') +
+foreach ($need in @('winhttp.dll', 'doorstop_config.ini', 'BepInEx/core/BepInEx.Unity.IL2CPP.dll', 'dotnet/coreclr.dll', 'LEIA-ME.txt', 'README.txt', 'SoulstoneCoop-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt') +
                   @($PluginFiles | ForEach-Object { "BepInEx/plugins/SoulstoneCoop/$_" })) {
     if ($entries -notcontains $need) { Fail "falta $need no zip" }
 }

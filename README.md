@@ -97,3 +97,9 @@ Design notes for each phase (in Portuguese) are in [`docs/`](docs/), starting wi
 - [BepInEx](https://github.com/BepInEx/BepInEx) and [Il2CppInterop](https://github.com/BepInEx/Il2CppInterop): mod loader and IL2CPP interop, bundled in the release zip.
 - [HarmonyX](https://github.com/BepInEx/HarmonyX): runtime patching.
 - [LiteNetLib](https://github.com/RevenantX/LiteNetLib): direct-IP transport.
+
+## License
+
+Soulstone Coop is released under the [MIT License](LICENSE): you can use, modify, port and redistribute it, as long as the copyright notice stays with it. A credit and a link back to this repository are appreciated.
+
+The release zip bundles third-party software under its own licenses (BepInEx and Il2CppInterop are LGPL); see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Nothing from the game itself is included.
