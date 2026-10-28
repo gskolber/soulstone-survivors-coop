@@ -19,7 +19,7 @@ Investigação em `docs/levelup-investigacao.md`.
 - **Escape de debug:** `[Debug] LevelUpFullPanel = true` usa o painel grande do jogo (também sem pausa, e o personagem fica parado). Os outros veem "Fulano escolhendo upgrade (sem pausa)". É só pra comparar ou se o overlay quebrar em alguma máquina.
 - **Rede (`PauseSync`):** o mod **não manda mais `LevelUp`** como motivo de pausa. Com o overlay o estado é `None`; no painel grande de debug, `Choosing`. Só o Esc (`Pause`) congela os outros. Um `LevelUp` recebido de uma versão antiga vira só aviso, nunca congela. O Esc continua como na fase 9: qualquer um pausa e o host despausa (fechando o próprio menu ou com F4).
 - **3+ jogadores:** cada um escolhe o próprio upgrade no próprio jogo, sem mandar nada que afete os outros.
-- **Opções do painel (`[Coop]`):** `LevelUpOverlayScale` (0.6), `LevelUpOverlayOpacity` (0.8) e `LevelUpOverlayPosition` (`Bottom` / `BottomLeft` / `BottomRight` / `Top`), como na 0.9.0.
+- **Opções do painel (`[Coop]`):** `LevelUpOverlayScale` (0.6), `LevelUpOverlayOpacity` (0.8) e `LevelUpPanelPosition` (`Top` / `Bottom` / `BottomLeft` / `BottomRight`). Desde a issue #5 o padrão é `Top`, o painel nunca entra no HUD de baixo e a chave antiga `LevelUpOverlayPosition` não vale mais (ver `docs/issue5-notas.md`).
 
 ## Painel compacto (overlay)
 

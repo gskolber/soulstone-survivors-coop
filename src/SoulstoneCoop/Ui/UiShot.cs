@@ -32,6 +32,7 @@ public static class UiShot
             else if (args[i] == "--coop-ui-shot-lang") Lang = args[i + 1];
             else if (args[i] == "--coop-ui-shot-gallery") Gallery = args[i + 1].Split(',');
         }
+        LevelUpShot.ParseArgs(args);
         if (Dir != null)
         {
             try { Directory.CreateDirectory(Dir); } catch { }
@@ -46,12 +47,13 @@ public static class UiShot
         {
             float dt = Time.unscaledDeltaTime;
             _clock += dt;
-            if (_clock > Deadline)
+            if (_clock > (LevelUpShot.Active ? 420f : Deadline))
             {
                 Plugin.StaticLog.LogWarning($"[SoulstoneCoop][shot] Deadline at step {_step}: dumping and quitting.");
                 Finish();
                 return;
             }
+            if (LevelUpShot.Active) LevelUpShot.PerFrame();
             if (_wait > 0f) { _wait -= dt; return; }
             Step();
         }
@@ -81,6 +83,7 @@ public static class UiShot
                 return;
             case 1:
                 if (Gallery != null) { ShowGallery(); _step = 100; _wait = 1f; return; }
+                if (LevelUpShot.Active) { _step = 500; return; }
                 if (Demo) { Time.captureFramerate = DemoFps; _step = 200; _frame = 0; return; }
                 if (CoopUi.UpdatePopupOpen && !_updateShot)
                 {
@@ -123,6 +126,13 @@ public static class UiShot
             case 200: DemoFrame(); return;
             case 100: Shot("gallery"); Next(0.5f); return;
             case 101: Finish(); return;
+            case 500: // --coop-ui-shot-levelup (issue #5): its own sequence
+            {
+                float w = LevelUpShot.Step(out bool finished);
+                if (finished) { Finish(); return; }
+                if (w > 0f) _wait = w;
+                return;
+            }
         }
     }
 
@@ -271,7 +281,7 @@ public static class UiShot
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][shot] Title screen: {ex.Message}"); }
     }
 
-    private static void Shot(string name)
+    internal static void Shot(string name)
     {
         string path = Path.Combine(Dir!, $"{Tag}{name}.png");
         ScreenCapture.CaptureScreenshot(path);

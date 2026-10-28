@@ -629,6 +629,13 @@ public static class CoopUi
         bool low = _inMenu && _panelOpen;
         var anchor = new Vector2(0.5f, low ? 0f : 1f);
         float y = low ? 24f : _inMenu ? -165f : -140f;
+        // Issue #5: the level-up panel at the top would sit on the banner (the pad hint): the banner goes under it.
+        if (!_inMenu && LevelUpOverlay.PanelScreenSpan is Vector2 span && Screen.height > 0)
+        {
+            float k = 1080f / Screen.height; // this canvas scales with the height (ref 1080)
+            float panelTop = (Screen.height - span.y) * k, panelBottom = (Screen.height - span.x) * k;
+            if (panelTop < -y + _bannerRt.rect.height && panelBottom > -y) y = -(panelBottom + 8f);
+        }
         if (_bannerRt.anchorMin != anchor)
         {
             _bannerRt.anchorMin = anchor;

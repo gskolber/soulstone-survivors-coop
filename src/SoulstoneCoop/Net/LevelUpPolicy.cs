@@ -35,7 +35,7 @@ public static class LevelUpPolicy
     {
         FullPanel = cfg.Bind("Debug", "LevelUpFullPanel", false,
             "Test only: in co-op, level-ups use the game's full-screen panel (no pause either, but you stand still while " +
-            "choosing) instead of the small panel at the bottom.");
+            "choosing) instead of the small panel.");
         Ui.LevelUpOverlay.Bind(cfg);
     }
 
@@ -51,7 +51,8 @@ public static class LevelUpPolicy
     /// <summary>This frame's decision for an open popup: skip the pause (in co-op, always)? and as the overlay?</summary>
     internal static bool Decide(out bool overlay, out bool coop)
     {
-        coop = NetworkManager.HasPeer && Lobby.CoopSession.LocalInRun && Lobby.CoopSession.AnyRemoteInRun;
+        coop = (NetworkManager.HasPeer && Lobby.CoopSession.LocalInRun && Lobby.CoopSession.AnyRemoteInRun)
+               || Ui.LevelUpShot.ForceCoop; // debug screenshots (--coop-ui-shot-levelup)
         overlay = coop && !FullPanel.Value;
         return coop;
     }
