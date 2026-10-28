@@ -30,14 +30,8 @@ public static class RunSync
     }
 
     private static RunParams? _clientRun;      // client: the host's run we're loading into (affix override)
-    private static PlayerProfileMapProgressionData? _reenabledAffixes; // client: AffixesDisabled flipped for the load
-    private static PlayerProfileMapProgressionData? _swappedAffixes;   // client: SelectedAffixes holds the host's list
-    private static List<string>? _profileAffixes;                      // client: what that list held before (null = no list)
     private static bool _holding;
     private static int _affixOverrides;
-
-    /// <summary>Debug (--coop-mob-shot-affixes, host): the affix list RunStart sends instead of the profile's.</summary>
-    internal static List<string>? DebugHostAffixes;
 
     // =====================================================================================
     // Gate on Fight (both sides)
@@ -166,7 +160,6 @@ public static class RunSync
         if (p.Mode == GameModes.Survivor)
         {
             p.HasAffixes = true;
-            if (DebugHostAffixes != null) { p.Affixes.AddRange(DebugHostAffixes); return p; }
             var prog = TryGetProgression(p.Scene);
             if (prog != null && !prog.AffixesDisabled && prog.SelectedAffixes != null)
                 foreach (var a in prog.SelectedAffixes) if (!string.IsNullOrEmpty(a)) p.Affixes.Add(a);
@@ -271,46 +264,60 @@ public static class RunSync
         Global.MasteryDifficultyTier = p.MasteryTier;
         Global.MasteryDynamicLevel = p.MasteryLevel;
         _clientRun = p;
+        _hostProgression = null;
+        if (p.HasAffixes) _affixOverrides = 0;
+    }
 
-        // Issue #3: SurvivorsGameManager.Start builds AffixGameplayData from MapProgression[map].SelectedAffixes, or
-        // from null when the map's affixes are off. Patching its constructor never worked: Il2CppInterop fell back to
-        // managed-only handlers ("Failed to init IL2CPP patch backend"), so the game's own call never reached it and
-        // every client played with its own curses. Instead the host's list goes into the profile for the load, with
-        // the affixes turned on; both are put back at StartMatch, long after the constructor copied the list.
-        RestoreAffixFlag();
-        if (p.HasAffixes)
+    // =====================================================================================
+    // Client: the host's affixes (issue #3)
+    // SurvivorsGameManager.Start builds AffixGameplayData from MapProgression.TryGetMapProgressionById(map) (its
+    // SelectedAffixes, or none when AffixesDisabled). Patching the AffixGameplayData constructor never worked:
+    // Il2CppInterop fell back to managed-only handlers ("Failed to init IL2CPP patch backend"), so the game's own call
+    // never reached it and every client played with its own curses. Writing the host's list into the profile isn't
+    // safe either: the game queues the profile objects and serializes them later on its own thread
+    // (StandalonePlayerDataProvider.RequestFileWrite / ProcessFileRequests), so a save could catch the swapped list.
+    // So while the host's run loads, the lookup returns a detached copy of that map's progression with the host's list:
+    // it is in no profile list, so nothing ever saves it, and nothing has to be put back on any exit path.
+    // =====================================================================================
+
+    private static PlayerProfileMapProgressionData? _hostProgression;
+
+    /// <summary>Postfix of PlayerProfileMapProgression.TryGetMapProgressionById (refs and a bool: trampoline-safe).</summary>
+    internal static void OnMapProgressionLookup(PlayerProfileMapProgression self, string mapId, ref PlayerProfileMapProgressionData progression, ref bool found)
+    {
+        var p = _clientRun;
+        if (p == null || !p.HasAffixes || NetworkManager.Role != NetRole.Client || mapId != p.Scene) return;
+        if (!CoopSession.LocalLoading && !CoopSession.StageTransition) return;
+        try
         {
-            var prog = TryGetProgression(p.Scene);
-            if (prog == null)
+            if (_hostProgression == null)
             {
-                if (p.Affixes.Count > 0)
-                    Plugin.StaticLog.LogWarning($"[SoulstoneCoop][run] Client has no progression for {p.Scene}: the host's affixes can't be applied.");
-                return;
-            }
-            try
-            {
-                if (prog.AffixesDisabled && p.Affixes.Count > 0)
+                var own = found ? progression : null;
+                var copy = new PlayerProfileMapProgressionData
                 {
-                    prog.AffixesDisabled = false;
-                    _reenabledAffixes = prog;
+                    MapId = mapId,
+                    NormalModeCompleteness = own != null ? own.NormalModeCompleteness : 0f,
+                    AffixesDisabled = false,
+                    SelectedAffixes = new Il2CppSystem.Collections.Generic.List<string>(),
+                };
+                if (own != null)
+                {
+                    copy.CompletedAffixes = own.CompletedAffixes;
+                    copy.AffixTierProgression = own.AffixTierProgression;
                 }
-                var list = prog.SelectedAffixes;
-                _profileAffixes = list != null ? new List<string>() : null;
-                if (list != null) foreach (var a in list) _profileAffixes!.Add(a);
-                if (list == null) prog.SelectedAffixes = list = new Il2CppSystem.Collections.Generic.List<string>();
-                list.Clear();
-                foreach (var a in p.Affixes) list.Add(a);
-                _swappedAffixes = prog;
-                _affixOverrides++;
+                foreach (var a in p.Affixes) copy.SelectedAffixes.Add(a);
+                _hostProgression = copy;
                 Plugin.StaticLog.LogInfo(
-                    $"[SoulstoneCoop][run] Client: host affixes in the profile for the load ({p.Affixes.Count}, own list " +
-                    $"{_profileAffixes?.Count.ToString() ?? "null"}, affixes were {(_reenabledAffixes != null ? "off" : "on")}).");
+                    $"[SoulstoneCoop][run] Client: {mapId} loads with the host's affixes ({p.Affixes.Count}) from a detached copy; " +
+                    $"own progression {(own != null ? $"kept ({own.SelectedAffixes?.Count ?? 0} affixes, disabled={own.AffixesDisabled})" : "missing")}.");
             }
-            catch (Exception ex)
-            {
-                Plugin.StaticLog.LogError($"[SoulstoneCoop][run] Client: swapping in the host's affixes: {ex.Message}");
-                RestoreAffixFlag();
-            }
+            progression = _hostProgression;
+            found = true;
+            _affixOverrides++;
+        }
+        catch (Exception ex)
+        {
+            Plugin.StaticLog.LogError($"[SoulstoneCoop][run] Client: host affixes for {mapId}: {ex.Message}");
         }
     }
 
@@ -323,7 +330,8 @@ public static class RunSync
             var got = new List<string>();
             var sel = data?.SelectedAffixes;
             if (sel != null) foreach (var a in sel) got.Add(a);
-            bool match = got.Count == p.Affixes.Count && !got.Except(p.Affixes).Any() && !p.Affixes.Except(got).Any();
+            // The game adds each affix's dependencies (AddAffixDependenciesRecursively), so "got" may hold more than was sent.
+            bool match = !p.Affixes.Except(got).Any();
             string line = $"[SoulstoneCoop][run] Client: run affixes {(match ? "match the host's" : "DIFFER from the host's")} " +
                           $"({got.Count} here, {p.Affixes.Count} sent, curse={data?.CurseLevel ?? -1}, overrides={_affixOverrides}).";
             if (match) Plugin.StaticLog.LogInfo(line);
@@ -444,7 +452,6 @@ public static class RunSync
 
     internal static void OnLocalMatchStarted()
     {
-        RestoreAffixFlag();
         if (_clientRun != null && _clientRun.HasAffixes && NetworkManager.Role == NetRole.Client) LogAppliedAffixes(_clientRun);
         _clientRun = null;
         _holding = false;
@@ -455,35 +462,9 @@ public static class RunSync
         // Restart from the end screen: the next scene is already on its way and still needs _clientRun
         // (the host's affixes); OnLocalMatchStarted clears it.
         if (CoopSession.StageTransition) { _holding = false; return; }
-        RestoreAffixFlag();
         _clientRun = null;
         _hostRun = null;
         _holding = false;
-    }
-
-    /// <summary>Client: give the profile back its own affix list and AffixesDisabled (see PrepareClientRun).</summary>
-    private static void RestoreAffixFlag()
-    {
-        if (_swappedAffixes != null)
-        {
-            try
-            {
-                if (_profileAffixes == null) _swappedAffixes.SelectedAffixes = null!;
-                else
-                {
-                    var list = _swappedAffixes.SelectedAffixes ?? new Il2CppSystem.Collections.Generic.List<string>();
-                    list.Clear();
-                    foreach (var a in _profileAffixes) list.Add(a);
-                    _swappedAffixes.SelectedAffixes = list;
-                }
-            }
-            catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][run] Client: restoring the profile's affixes: {ex.Message}"); }
-            _swappedAffixes = null;
-            _profileAffixes = null;
-        }
-        if (_reenabledAffixes == null) return;
-        try { _reenabledAffixes.AffixesDisabled = true; } catch { }
-        _reenabledAffixes = null;
     }
 
     private static PlayerProfileMapProgressionData? TryGetProgression(string mapId)
@@ -608,5 +589,17 @@ public static class CoopRestartPatch
     {
         try { RunSync.AfterHostRestart(__instance, __state); }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CoopRestartPatch.Postfix: {ex}"); }
+    }
+}
+
+/// <summary>Issue #3, client: the host's affixes while its run loads (RunSync.OnMapProgressionLookup).</summary>
+[HarmonyPatch(typeof(PlayerProfileMapProgression), nameof(PlayerProfileMapProgression.TryGetMapProgressionById))]
+public static class ClientHostAffixesLookupPatch
+{
+    [HarmonyPostfix]
+    public static void Postfix(PlayerProfileMapProgression __instance, string mapId, ref PlayerProfileMapProgressionData mapProgressionData, ref bool __result)
+    {
+        try { RunSync.OnMapProgressionLookup(__instance, mapId, ref mapProgressionData, ref __result); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] ClientHostAffixesLookupPatch: {ex}"); }
     }
 }

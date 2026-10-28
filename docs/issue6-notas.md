@@ -18,17 +18,14 @@ Testado com duas instâncias locais por IP (modo de debug `--coop-mob-shot`, `Ui
 
 ## #3: causa e correção
 
-- O patch no `AffixGameplayData..ctor` nunca rodou: o Il2CppInterop avisa `Failed to init IL2CPP patch backend ... using normal patch handlers`, e esse fallback não pega a chamada nativa do `SurvivorsGameManager.Start`. No log do cliente aparecia o `RunStart received`, mas nunca o `host affixes applied`. Cada cliente jogava com as maldições do próprio perfil, o que muda o contador de bosses, os stats etc.
-- Agora o `RunSync.PrepareClientRun` coloca a lista do host em `MapProgression[mapa].SelectedAffixes`, liga os afixos se estiverem desligados e devolve tudo no `StartMatch` (ou ao sair da run). O patch do construtor saiu.
-- No `StartMatch`, o cliente loga `run affixes match the host's` ou `DIFFER from the host's`, com a curse.
-- Risco: se o jogo salvar o perfil durante o load, a seleção salva do cliente para aquele mapa fica igual à do host. A troca do `AffixesDisabled`, que já existia, tem o mesmo risco.
-- Do #3 ficou de fora a checagem de totais de objetivo entre host e cliente, além do log `[objectives]` que já existe.
+- O patch no `AffixGameplayData..ctor` nunca rodou: o Il2CppInterop avisa `Failed to init IL2CPP patch backend ... using normal patch handlers`, e esse fallback não pega a chamada nativa do `SurvivorsGameManager.Start`. Cada cliente jogava com as maldições do próprio perfil (bosses a mais, objetivo `x/15` diferente).
+- Trocar a lista no perfil (a primeira versão desta correção) não é seguro: o jogo enfileira os objetos do perfil e os serializa depois, numa thread própria (`StandalonePlayerDataProvider.RequestFileWrite` → `ProcessFileRequests`), então um save podia pegar a lista do host.
+- Agora há um postfix em `PlayerProfileMapProgression.TryGetMapProgressionById`: enquanto a run do host carrega (`LocalLoading` ou `StageTransition`, mesmo mapa), o cliente devolve uma **cópia avulsa** da progressão daquele mapa com a lista do host e os afixos ligados. A cópia não está em lista nenhuma do perfil, então nunca é salva, e não há nada para devolver em nenhuma saída (menu, desconexão, fechar o jogo no meio do load). Isso também funciona quando o cliente nunca jogou o mapa.
+- No `StartMatch`, o cliente loga `run affixes match the host's` (todas as que o host mandou estão presentes; o jogo acrescenta as dependências, ex. `EmpoweredBosses-01`).
 
 ## Teste pendente
 
-1. Dungeon, host e cliente na mesma run, de preferência várias vezes, porque o sorteio é aleatório. No cliente: mobs comuns desde o início; `outsideLists=` maior que 0 em algumas runs; `unresolved=-`.
-2. Uma run normal (Desert, sem maldições): nada muda e `outsideLists=0` na maioria das vezes.
-3. Cliente com maldições diferentes das do host no próprio perfil: o log `run affixes match the host's` aparece, o contador de bosses bate, e depois da run a seleção do cliente continua a dele.
+- Com um amigo de verdade (PCs diferentes): Dungeon por alguns minutos, com maldições diferentes nos dois perfis.
 
 ## Resultado em jogo (duas instâncias locais)
 
@@ -37,3 +34,11 @@ Testado com duas instâncias locais por IP (modo de debug `--coop-mob-shot`, `Ui
 - **4 runs no Dungeon:** o cliente teve ≈40–50 marionetes desde o início, com `unresolved=-`, e os prints de 30 s mostram os mesmos esqueletos nas mesmas posições. Em 40 s tudo fica no Tier1, que coincidiu nas 4, então `outsideLists=0`: o caminho novo ainda não foi exercitado (falta uma run de 2–3 min).
 - **#3:** apareceu `run affixes match the host's`, mas o perfil é o mesmo nas duas instâncias locais. Falta testar com um cliente de maldições diferentes (PCs diferentes).
 - **Achado à parte:** o cliente aceita o `RunStart` ainda na tela de título, sem o perfil carregado, e fica preso no loading (`Client has no progression`). O `MobShot` espera 15 s por isso.
+
+### Segunda rodada (perfis separados)
+
+- `--coop-profile-dir <pasta>` (debug, `Ui/MobShot.cs`): cada instância grava o save na própria pasta (`StandalonePlayerDataProvider.PersistentDataPath`), semeada com uma cópia do save real. O save real não foi tocado.
+- **#3:** o host com 6 maldições (incluindo `EmpoweredBosses-02` e `SimultaneousBosses`) e o cliente com as próprias 4 (ou nenhuma). O cliente jogou com as do host: as mesmas 7 maldições, `curse=10`, `extraBosses=2`, objetivo `0/15` nos dois (sem a correção o cliente teria `0/5`). Depois de três runs fechadas no meio, o save do cliente continuava com as 4 maldições dele (`Profile affixes ... [HealingDampening-01,ExplosiveGoblins-01,ResilientElites-01,ResilientBosses-01]`).
+- **Contadores:** numa run de 200 s, bosses pendentes e objetivo iguais nos dois lados (`pendingBosses=3`, `main=0/15`). No fim, `main` 2/15 no host e 1/15 no cliente, a 2 s um do outro: é o atraso normal do `ObjectiveSync`.
+- **#6, caminho novo:** `--coop-mob-shot-forget Creeps/SewerRat` tira esse endereço das listas do cliente. Resultado: `'Creeps/SewerRat' is not in our tier lists ...: loaded from Resources, prefabData=True (type 47)`, `outsideLists=1`, `unresolved=-`. `--coop-mob-shot-tier <n>` força o tier do host (o Tier3 saiu diferente nos dois lados, mas os mobs dele estavam em outras listas do cliente).
+- **Bugs vistos, fora do escopo** (para outras tarefas): marionetes de mob comum deslizando sem animar a caminhada (às vezes; talvez com a janela do cliente em segundo plano); bosses invisíveis no cliente durante o estado de entrada, antes de começarem a agir; o cliente aceita o `RunStart` ainda na tela de título e trava no loading.
