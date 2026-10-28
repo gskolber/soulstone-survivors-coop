@@ -317,7 +317,7 @@ public static class ClientPuppets
                     $"[SoulstoneCoop][puppets] alive={AliveCount} dying={ByNetId.Count - AliveCount} pending={Pending.Count} " +
                     $"snapshots={_snapshotsRecv / secs:F1}/s bytesPerSnapshot={(_snapshotsRecv > 0 ? _snapshotBytes / _snapshotsRecv : 0)} " +
                     $"avgErr={(_errCount > 0 ? _errSum / _errCount : 0):F2}u maxErr={_errMax:F2}u teleports={_teleports} " +
-                    $"unknownNetIds={_unknownNetIds} clampedHits={_clampedHits} localDeaths={_localDeaths} killCredits={_killCredits} unresolved={unresolved}");
+                    $"unknownNetIds={_unknownNetIds} clampedHits={_clampedHits} localDeaths={_localDeaths} killCredits={_killCredits} unresolved={unresolved} outsideLists={EnemyPrefabKeys.OutsideListsResolved}");
                 if (_bossesCreated + _bossesReleased + _bossErrors + _maxHealthMatched > 0 || RetryUntil.Count > 0)
                     Plugin.StaticLog.LogInfo(
                         $"[SoulstoneCoop][puppets] bosses created={_bossesCreated} released={_bossesReleased} errors={_bossErrors} " +
@@ -409,7 +409,7 @@ public static class ClientPuppets
     private static bool TryCreatePuppet(EnemySpawnMsg msg)
     {
         EnemyPrefabKeys.Resolved? res;
-        try { res = EnemyPrefabKeys.ClientResolve(msg.Key); }
+        try { res = EnemyPrefabKeys.ClientResolve(msg.Key, msg); }
         catch (Exception ex)
         {
             Plugin.StaticLog.LogError($"[SoulstoneCoop][puppets] Resolving '{msg.Key}': {ex.Message}");

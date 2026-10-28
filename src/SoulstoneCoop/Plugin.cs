@@ -94,21 +94,6 @@ public class Plugin : BasePlugin
             Log.LogError($"Could not patch EnemyPrefabsUtil.SpawnEnemyEntity (enemy keys fall back to prefab names): {ex}");
         }
 
-        // Phase 6: the client swaps the host's Survivors affixes in while its AffixGameplayData is built. A
-        // constructor, so patched by hand: if this fails, runs still start, just with the client's own affixes.
-        try
-        {
-            var ctor = AccessTools.Constructor(typeof(AffixGameplayData),
-                new[] { typeof(Il2CppSystem.Collections.Generic.List<string>), typeof(int) });
-            harmony.Patch(ctor,
-                prefix: new HarmonyMethod(typeof(Lobby.RunSync), nameof(Lobby.RunSync.AffixCtorPrefix)),
-                postfix: new HarmonyMethod(typeof(Lobby.RunSync), nameof(Lobby.RunSync.AffixCtorPostfix)));
-        }
-        catch (System.Exception ex)
-        {
-            Log.LogError($"Could not patch AffixGameplayData..ctor (the client keeps its own affixes): {ex}");
-        }
-
         // Phase 7: take over the Steam callback pump (lobby invites, P2P sessions). By hand: if it fails, the game
         // keeps pumping its own callbacks and only the Steam invite is lost.
         try
