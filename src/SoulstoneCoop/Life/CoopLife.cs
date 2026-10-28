@@ -121,7 +121,7 @@ public static class CoopLife
         slot < Players.MaxSlots && (CoopRole.IsHostSide ? Enemies.RemoteProxy.IsDownOrDead(slot) : _downFromHost[slot]);
 
     /// <summary>Revive progress shown over that player (0..1): the host's own count, or what the host sent.</summary>
-    private static float ProgressOf(byte slot) => slot < Players.MaxSlots ? _progress[slot] : 0f;
+    internal static float ProgressOf(byte slot) => slot < Players.MaxSlots ? _progress[slot] : 0f;
 
     /// <summary>Local player down or dead for real.</summary>
     internal static bool LocalOut
@@ -902,7 +902,7 @@ public static class CoopLife
         _prevF9 = f9; _prevF10 = f10; _prevF11 = f11;
     }
 
-    private static void DebugLethalHit()
+    internal static void DebugLethalHit()
     {
         var local = GameState.LocalPlayerEntity;
         var h = local != null ? local._health : null;

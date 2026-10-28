@@ -36,6 +36,7 @@ public class Plugin : BasePlugin
         Net.LevelUpPolicy.Bind(Config);
         Ui.Loc.Init(Config); // docs/i18n-notas.md
         Ui.UpdateCheck.Bind(Config); // 1.0: "new version" notice
+        Ui.PartyHud.Bind(Config); // issue #7: party panel
 
         AutoHost = Config.Bind("Debug", "AutoHost", false,
             "Start hosting automatically when the main menu opens (instead of the Co-op panel or Insert).");
@@ -166,6 +167,7 @@ public class Plugin : BasePlugin
             else if (args[i] == "--coop-sim-loss" && i + 1 < args.Length && int.TryParse(args[i + 1], out var loss)) _simLoss = loss;
         }
         Ui.UiShot.ParseArgs(args);
+        Ui.PartyShot.ParseArgs(args); // issue #7, debug
         if (HostArg || ConnectAddressArg != null || FakeVersionArg != null || NameArg != null)
             Log.LogInfo($"Launch args: host={HostArg} connect={ConnectAddressArg ?? "-"} fakeVersion={FakeVersionArg ?? "-"} name={NameArg ?? "-"}");
     }

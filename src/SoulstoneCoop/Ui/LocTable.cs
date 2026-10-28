@@ -193,5 +193,11 @@ public static partial class Loc
         ["float.revived"] = R("REVIVED!", "REVIVEU!", "¡REVIVIÓ!", "RÉANIMÉ !", "WIEDERBELEBT!", "ПОДНЯЛСЯ!", "已复活！", "復活！"),
         // name tag over a partner's ghost (GhostOverhead.cs)
         ["gh.down"] = R("{name} (down)", "{name} (caído)", "{name} (caído)", "{name} (à terre)", "{name} (am Boden)", "{name} (повержен)", "{name}（倒地）", "{name}（ダウン）"),
+        // party panel (Ui/PartyHud.cs, issue #7): short, they share a row with the health bar
+        ["party.level"] = R("Lv {n}", "Nv {n}", "Nv {n}", "Niv {n}", "St. {n}", "Ур. {n}", "{n} 级", "Lv{n}"),
+        ["party.down"] = R("DOWN", "CAÍDO", "CAÍDO", "À TERRE", "AM BODEN", "ПОВЕРЖЕН", "倒地", "ダウン"),
+        ["party.reviving"] = R("REVIVING {pct}%", "REVIVENDO {pct}%", "REVIVIENDO {pct}%", "RÉANIMATION {pct}%", "BELEBUNG {pct}%", "ПОДЪЁМ {pct}%", "复活中 {pct}%", "蘇生中 {pct}%"),
+        ["party.dead"] = R("DEAD", "MORTO", "MUERTO", "MORT", "TOT", "МЁРТВ", "死亡", "死亡"),
+        ["party.gone"] = R("Disconnected", "Desconectado", "Desconectado", "Déconnecté", "Getrennt", "Отключён", "已断开", "切断"),
     };
 }

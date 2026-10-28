@@ -45,7 +45,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Skills | Each player sees the other's skills (visual only; damage is synced separately) |
 | Progression | Team XP (whoever picks up an orb, both get it), loot and kill credit on the guest; each player keeps their own level and upgrades |
 | Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel you keep playing under (1-4 to pick) |
-| Death | Downed state, any ally standing next to you revives you, defeat only when everyone is down |
+| Death | Downed state, any ally standing next to you revives you, defeat only when everyone is down; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
 | End of run | Victory, Home portal, Endless and challenge portals and Restart happen for everyone; the host surrendering ends the run for all |
 | Disconnects | Host leaving ends everyone's run with a notice; a guest leaving (or surrendering) lets the others continue |
 
@@ -73,6 +73,7 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | Setting | Default | Meaning |
 |---|---|---|
 | `[Debug] LevelUpFullPanel` | `false` | Use the game's full-screen upgrade panel instead of the compact one (co-op upgrade choices never pause either way) |
+| `[Coop] PartyHud` | `true` | In a run, a panel at the top left with each partner's health, level, XP, revives left and state (down, reviving, dead, disconnected) |
 | `[Coop] EndRunWhenHostLeaves` | `true` | End the guest's run when the host disconnects |
 | `[Coop] AllowRejoin` | `false` | Experimental: let the guest rejoin a run in progress (as a fresh character) |
 | `[Coop] MaxPlayers` | `8` | Lobby size (2-8) |
