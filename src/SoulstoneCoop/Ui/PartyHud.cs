@@ -38,9 +38,9 @@ internal static class PartyHud
     private const float GoneSeconds = 30f;     // a disconnected partner's row stays this long
 
     private const string Gold = "#FFC700", Muted = "#BEB4A5", Bad = "#FF8080";
-    private static readonly Color HpHigh = new(0.36f, 0.82f, 0.36f, 1f);
-    private static readonly Color HpMid = new(0.9f, 0.76f, 0.29f, 1f);
-    private static readonly Color HpLow = new(0.9f, 0.35f, 0.29f, 1f);
+    private static readonly Color HpHigh = new(0.24f, 0.62f, 0.24f, 1f);   // dark enough for the white numbers over it
+    private static readonly Color HpMid = new(0.78f, 0.56f, 0.1f, 1f);
+    private static readonly Color HpLow = new(0.78f, 0.22f, 0.18f, 1f);
     private static readonly Color DownBg = new(0.22f, 0.02f, 0.02f, 0.9f);
     private static readonly Color BarBg = new(0f, 0f, 0f, 0.75f);
     private static readonly Color ReviveColor = new(0.72f, 0.45f, 0.04f, 1f); // amber: the white text over it stays readable

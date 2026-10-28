@@ -12,7 +12,7 @@ Painel no canto superior esquerdo (`Ui/PartyHud.cs`), uma linha por parceiro (at
 - nome da Steam na cor do jogador (vermelho se caído/morto), com "instável" em vermelho quando a conexão está calada;
 - **revives restantes**: ícone `Death_Guard` do próprio HUD do jogo + "x2". Some com 0;
 - **nível** ("Nv 23", dourado);
-- **barra de vida** com "182 / 210" por cima (verde > 50%, amarelo > 25%, vermelho);
+- **barra de vida** com "182 / 210" por cima (verde > 50%, amarelo > 25%, vermelho; tons escuros pros números brancos aparecerem);
 - **barra de XP** fina embaixo: progresso **daquele jogador** até o próximo nível dele;
 - **estado**: vivo; **CAÍDO** (barra vermelho-escura); **REVIVENDO 45%** (barra âmbar enchendo com o progresso do
   revive); **MORTO** (linha apagada, ícone cinza); **Desconectado** (apagada, fica 30 s); fora da partida ("no menu",
@@ -82,6 +82,10 @@ de 10 s, toma o golpe do F9 até cair (as cargas de Death Guard vão primeiro), 
 Prints: `01` 2 jogadores, `02` 7 linhas falsas em todos os estados, `03`–`05` parceiro caído/revivendo, `06` depois,
 `07` desconectado; o cliente tira os seus (`c01`–`c04`). Também grava `run-ui-dump.txt` (hierarquia da UI da run).
 `--coop-party-shot-map <cena>` troca o mapa.
+
+`--coop-party-shot-release` (nos dois, com `-popupwindow` e `--coop-name Mira` no cliente): prints pras notas de
+versão, `release-1..3`, com três parceiros (Mira = o cliente de verdade, Tobias revivendo, Kael com pouca vida) e nada
+de debug na tela.
 
 Visto nos prints (1280x720, 1600x900, 1920x1080; pt-BR no host, en no cliente):
 

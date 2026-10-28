@@ -16,6 +16,7 @@ internal static class PartyShot
 {
     private static string? _dir;
     private static string _map = "SurvivorsDesert";
+    private static bool _release;
     private static int _step;
     private static float _wait, _clock, _runClock, _splashTimer;
     private static bool _done, _runStarted;
@@ -23,6 +24,7 @@ internal static class PartyShot
 
     internal static void ParseArgs(string[] args)
     {
+        foreach (var a in args) if (a == "--coop-party-shot-release") _release = true;
         for (int i = 0; i + 1 < args.Length; i++)
         {
             if (args[i] == "--coop-party-shot") _dir = args[i + 1];
@@ -103,6 +105,12 @@ internal static class PartyShot
                 _step = 2;
                 return;
             }
+            // --coop-party-shot-release: three partners (the real one is the first row), one being revived, a few frames.
+            case 2 when _release: At(5f, () => PartyHud.DebugRows = ReleaseRows()); return;
+            case 3 when _release: After(1.5f, () => Shot("release-1")); return;
+            case 4 when _release: After(2.5f, () => Shot("release-2")); return;
+            case 5 when _release: After(2.5f, () => Shot("release-3")); return;
+            case 6 when _release: After(0.5f, Finish); return;
             case 2: At(6f, () => Shot("01-host-2p")); return;
             case 3: After(0.5f, () => PartyHud.DebugRows = FakeRows()); return;
             case 4: After(0.6f, () => Shot("02-host-8p-fake")); return;
@@ -156,6 +164,7 @@ internal static class PartyShot
         {
             case 0: if (CoopSession.LocalInRun) _step = 2; else Menu(); return; // the RunStart may come before the menu shows
             case 1: if (CoopSession.LocalInRun) _step = 2; return;
+            case 2 when _release: At(25f, Finish); return; // the host does the shooting
             case 2: At(6f, () => Shot("c01-client-2p")); return;
             case 3: After(1f, () => PartyHud.DebugRows = FakeRows()); return;
             case 4: After(0.6f, () => Shot("c02-client-8p-fake")); return;
@@ -176,6 +185,22 @@ internal static class PartyShot
             case 9: After(1.5f, () => Shot("c04-client-after-down")); return;
             case 10: After(1f, Finish); return;
         }
+    }
+
+    /// <summary>For the release notes: three partners mid-run, one of them being revived. Slot 1 matches the real client
+    /// (launch it with --coop-name Mira) so its ghost's name tag agrees with the panel.</summary>
+    private static List<PartyHud.RowData> ReleaseRows()
+    {
+        string mira = CoopSession.Get(1)?.Info.CharacterName is { Length: > 0 } c ? c : "MonkeyKing";
+        return new List<PartyHud.RowData>
+        {
+            new() { Slot = 1, Name = "Mira", CharName = mira, State = PartyHud.State.Alive, HpKnown = true, Hp = 168, MaxHp = 205,
+                    StatusKnown = true, Level = 14, Xp = 0.55f, Revives = 1 },
+            new() { Slot = 2, Name = "Tobias", CharName = "Paladin", State = PartyHud.State.Down, HpKnown = true, Hp = 1, MaxHp = 240,
+                    StatusKnown = true, Level = 13, Xp = 0.3f, Revives = 0, Progress = 0.6f },
+            new() { Slot = 3, Name = "Kael", CharName = "Necromancer", State = PartyHud.State.Alive, HpKnown = true, Hp = 74, MaxHp = 160,
+                    StatusKnown = true, Level = 14, Xp = 0.8f, Revives = 2 },
+        };
     }
 
     /// <summary>Seven partners in every state the panel knows.</summary>
