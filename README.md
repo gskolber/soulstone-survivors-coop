@@ -73,6 +73,7 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | Setting | Default | Meaning |
 |---|---|---|
 | `[Debug] LevelUpFullPanel` | `false` | Use the game's full-screen upgrade panel instead of the compact one (co-op upgrade choices never pause either way) |
+| `[Coop] LevelUpPanelPosition` | `Top` | Where the compact upgrade panel sits: `Top` (above your character) or `Bottom` (just above the health bar) |
 | `[Coop] PartyHud` | `true` | In a run, a panel at the top left with each partner's health, level, XP, revives left and state (down, reviving, dead, disconnected) |
 | `[Coop] EndRunWhenHostLeaves` | `true` | End the guest's run when the host disconnects |
 | `[Coop] AllowRejoin` | `false` | Experimental: let the guest rejoin a run in progress (as a fresh character) |
