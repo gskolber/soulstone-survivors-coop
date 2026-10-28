@@ -46,6 +46,7 @@ public static class EnemyPrefabKeys
         ResIndex.Clear();
         ResProbeCache.Clear();
         _resIndexBuilt = false;
+        OutsideListsResolved = 0;
     }
 
     public static string StripClone(string name)
@@ -234,8 +235,15 @@ public static class EnemyPrefabKeys
 
     // ---------------- client ----------------
 
-    /// <summary>Client: prefab (+ PrefabData when known) for a key, or null.</summary>
-    public static Resolved? ClientResolve(string key)
+    /// <summary>Issue #6: tier-list keys this client had to load itself, because the host rolled a variant we didn't.</summary>
+    public static int OutsideListsResolved;
+
+    /// <summary>Debug (--coop-mob-shot-nofix): skip the issue #6 fallback, to see the old behaviour.</summary>
+    internal static bool DebugNoOutsideLists;
+
+    /// <summary>Client: prefab (+ PrefabData when known) for a key, or null. <paramref name="msg"/> carries the
+    /// host's EnemyPrefabData type (issue #6), for a tier-list key that isn't in our own lists.</summary>
+    public static Resolved? ClientResolve(string key, in EnemySpawnMsg msg)
     {
         if (ClientCache.TryGetValue(key, out var cached) && cached.Prefab != null) return cached;
 
@@ -254,10 +262,38 @@ public static class EnemyPrefabKeys
         else if (key.StartsWith(NamePrefix, StringComparison.Ordinal))
             r = ResolveByName(key.Substring(NamePrefix.Length));
         else
-            r = ResolveByAddress(key) ?? ResolveByName(LastSegment(key));
+            r = ResolveByAddress(key) ?? ResolveOutsideLists(key, msg) ?? ResolveByName(LastSegment(key));
 
         if (r != null) ClientCache[key] = r;
         return r;
+    }
+
+    /// <summary>Issue #6: EnemyPrefabsUtil.FillTierList (0x6E1B80) keeps ONE of the map's variants per tier
+    /// (Enemy-Prefabs-Per-Map-Dungeon-Tier-01a..01d), picked with RandomUtils.Range on each machine on its own, and only
+    /// preloads that one. So the host's enemy may be in none of our lists, and not loaded either: it was skipped as
+    /// unresolved. A list address is a Resources path (FillTierList preloads it with ResourcesUtil.Preload), and the
+    /// PrefabData is the entry of the same table FillTierList reads (EnemyPrefabsSO.TryGetPrefabDataByType, 0x4FEE20:
+    /// first PrefabDatas entry with that Type, IsElite and IsEndless).</summary>
+    private static Resolved? ResolveOutsideLists(string address, in EnemySpawnMsg msg)
+    {
+        if (!msg.HasPrefabType || DebugNoOutsideLists) return null;
+        Entity? prefab = null;
+        try { prefab = ResourcesUtil.Load<Entity>(address); } catch { /* not a Resources path */ }
+        if (prefab == null) return null;
+
+        EnemyPrefabData? data = null;
+        var datas = Global.EnemyPrefabs?.PrefabDatas;
+        if (datas != null)
+            for (int i = 0; i < datas.Length && data == null; i++)
+            {
+                var d = datas[i]?.Data;
+                if (d != null && (int)d.Type == msg.PrefabType && d.IsElite == msg.DataIsElite && d.IsEndless == msg.DataIsEndless) data = d;
+            }
+        OutsideListsResolved++;
+        Plugin.StaticLog.LogInfo(
+            $"[SoulstoneCoop][puppets] '{address}' is not in our tier lists (the host rolled another variant): " +
+            $"loaded from Resources, prefabData={(data != null)} (type {msg.PrefabType} elite={msg.DataIsElite} endless={msg.DataIsEndless}).");
+        return new Resolved { Prefab = prefab, PrefabData = data };
     }
 
     /// <summary>"&lt;ownerNetId&gt;:Name": the prefab is in the owner puppet's summon skills (its PossiblePrefabs are

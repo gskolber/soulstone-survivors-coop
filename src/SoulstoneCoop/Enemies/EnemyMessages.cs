@@ -23,6 +23,12 @@ public struct EnemySpawnMsg
     public sbyte HostPendingBosses;                       // BossSpawnProcessor._pendingBosses on the host at spawn time
     public bool HostHasPendingBosses;
 
+    // Issue #6, optional block (HasPrefabType): the EnemyPrefabData the host's tier list gave this enemy, so the
+    // client can rebuild it when the key isn't in its own lists (each machine rolls its own tier variants).
+    public bool HasPrefabType;
+    public int PrefabType;             // EnemyPrefabData.Type (EnemyType)
+    public bool DataIsElite, DataIsEndless; // EnemyPrefabData.IsElite / IsEndless
+
     public void Write(NetDataWriter w)
     {
         w.Put((byte)PacketType.EnemySpawn);
@@ -35,11 +41,18 @@ public struct EnemySpawnMsg
         w.Put(MaxHealth);
         w.Put(HealthPercent);
         w.Put(HasBoss);
-        if (!HasBoss) return;
-        w.Put(BossTier); w.Put(BossSkillsTier); w.Put(BossLootTier);
-        w.Put(BossMultMaxHealth);
-        w.Put(HostPendingBosses);
-        w.Put(HostHasPendingBosses);
+        if (HasBoss)
+        {
+            w.Put(BossTier); w.Put(BossSkillsTier); w.Put(BossLootTier);
+            w.Put(BossMultMaxHealth);
+            w.Put(HostPendingBosses);
+            w.Put(HostHasPendingBosses);
+        }
+        w.Put(HasPrefabType);
+        if (!HasPrefabType) return;
+        w.Put(PrefabType);
+        w.Put(DataIsElite);
+        w.Put(DataIsEndless);
     }
 
     public static EnemySpawnMsg Read(NetDataReader r)
@@ -62,6 +75,13 @@ public struct EnemySpawnMsg
             m.BossMultMaxHealth = r.GetFloat();
             m.HostPendingBosses = r.GetSByte();
             m.HostHasPendingBosses = r.GetBool();
+        }
+        m.HasPrefabType = r.GetBool();
+        if (m.HasPrefabType)
+        {
+            m.PrefabType = r.GetInt();
+            m.DataIsElite = r.GetBool();
+            m.DataIsEndless = r.GetBool();
         }
         return m;
     }
