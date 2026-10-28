@@ -226,7 +226,7 @@ public static class UiShot
     }
 
     /// <summary>--coop-ui-shot-lang: the game's own language switch (its fonts too), not saved to its prefs.</summary>
-    private static bool SetGameLanguage()
+    internal static bool SetGameLanguage()
     {
         if (Lang == null) return false;
         try
@@ -249,7 +249,7 @@ public static class UiShot
         }
     }
 
-    private static void PassSplash()
+    internal static void PassSplash()
     {
         var mm = UnityEngine.Object.FindObjectOfType<MenuManager>();
         var splash = mm != null ? mm.SplashScreenPanel : null;

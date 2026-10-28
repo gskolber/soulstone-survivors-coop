@@ -151,6 +151,7 @@ public class Plugin : BasePlugin
             else if (args[i] == "--coop-sim-loss" && i + 1 < args.Length && int.TryParse(args[i + 1], out var loss)) _simLoss = loss;
         }
         Ui.UiShot.ParseArgs(args);
+        Ui.MobShot.ParseArgs(args); // issues #6 and #3, debug
         if (HostArg || ConnectAddressArg != null || FakeVersionArg != null || NameArg != null)
             Log.LogInfo($"Launch args: host={HostArg} connect={ConnectAddressArg ?? "-"} fakeVersion={FakeVersionArg ?? "-"} name={NameArg ?? "-"}");
     }

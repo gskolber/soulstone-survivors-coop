@@ -36,6 +36,9 @@ public static class RunSync
     private static bool _holding;
     private static int _affixOverrides;
 
+    /// <summary>Debug (--coop-mob-shot-affixes, host): the affix list RunStart sends instead of the profile's.</summary>
+    internal static List<string>? DebugHostAffixes;
+
     // =====================================================================================
     // Gate on Fight (both sides)
     // =====================================================================================
@@ -163,6 +166,7 @@ public static class RunSync
         if (p.Mode == GameModes.Survivor)
         {
             p.HasAffixes = true;
+            if (DebugHostAffixes != null) { p.Affixes.AddRange(DebugHostAffixes); return p; }
             var prog = TryGetProgression(p.Scene);
             if (prog != null && !prog.AffixesDisabled && prog.SelectedAffixes != null)
                 foreach (var a in prog.SelectedAffixes) if (!string.IsNullOrEmpty(a)) p.Affixes.Add(a);

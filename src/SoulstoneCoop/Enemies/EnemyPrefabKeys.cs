@@ -238,6 +238,9 @@ public static class EnemyPrefabKeys
     /// <summary>Issue #6: tier-list keys this client had to load itself, because the host rolled a variant we didn't.</summary>
     public static int OutsideListsResolved;
 
+    /// <summary>Debug (--coop-mob-shot-nofix): skip the issue #6 fallback, to see the old behaviour.</summary>
+    internal static bool DebugNoOutsideLists;
+
     /// <summary>Client: prefab (+ PrefabData when known) for a key, or null. <paramref name="msg"/> carries the
     /// host's EnemyPrefabData type (issue #6), for a tier-list key that isn't in our own lists.</summary>
     public static Resolved? ClientResolve(string key, in EnemySpawnMsg msg)
@@ -273,7 +276,7 @@ public static class EnemyPrefabKeys
     /// first PrefabDatas entry with that Type, IsElite and IsEndless).</summary>
     private static Resolved? ResolveOutsideLists(string address, in EnemySpawnMsg msg)
     {
-        if (!msg.HasPrefabType) return null;
+        if (!msg.HasPrefabType || DebugNoOutsideLists) return null;
         Entity? prefab = null;
         try { prefab = ResourcesUtil.Load<Entity>(address); } catch { /* not a Resources path */ }
         if (prefab == null) return null;

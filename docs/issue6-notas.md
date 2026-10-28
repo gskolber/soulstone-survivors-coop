@@ -1,6 +1,6 @@
 # Issue #6 (mobs comuns invisíveis no cliente) e #3 (maldições do host)
 
-Compilado, **sem teste em jogo** (não havia como entrar numa run sem clicar, e o jogo estava em uso por outras sessões).
+Testado com duas instâncias locais por IP (modo de debug `--coop-mob-shot`, `Ui/MobShot.cs`). Resultado no fim desta nota.
 
 ## #6: causa
 
@@ -29,3 +29,11 @@ Compilado, **sem teste em jogo** (não havia como entrar numa run sem clicar, e 
 1. Dungeon, host e cliente na mesma run, de preferência várias vezes, porque o sorteio é aleatório. No cliente: mobs comuns desde o início; `outsideLists=` maior que 0 em algumas runs; `unresolved=-`.
 2. Uma run normal (Desert, sem maldições): nada muda e `outsideLists=0` na maioria das vezes.
 3. Cliente com maldições diferentes das do host no próprio perfil: o log `run affixes match the host's` aparece, o contador de bosses bate, e depois da run a seleção do cliente continua a dele.
+
+## Resultado em jogo (duas instâncias locais)
+
+- `Ui/MobShot.cs`, só por argumento. Host: `--coop-host --coop-mob-shot <pasta>\host [--coop-mob-shot-map <cena>] [--coop-mob-shot-affixes a,b|none]`. Cliente: `--coop-connect 127.0.0.1 --coop-mob-shot <pasta>\client [--coop-mob-shot-nofix]`. O host começa a run 15 s depois que o parceiro chega ao menu, os dois tiram prints aos 15 e 30 s e fecham aos 40 s. Aos 15 s cada lado loga as listas de tier que sorteou.
+- **Causa confirmada:** numa das runs, o Tier3 e o Elite1 saíram diferentes entre host e cliente (cada um sorteou a sua variante).
+- **4 runs no Dungeon:** o cliente teve ≈40–50 marionetes desde o início, com `unresolved=-`, e os prints de 30 s mostram os mesmos esqueletos nas mesmas posições. Em 40 s tudo fica no Tier1, que coincidiu nas 4, então `outsideLists=0`: o caminho novo ainda não foi exercitado (falta uma run de 2–3 min).
+- **#3:** apareceu `run affixes match the host's`, mas o perfil é o mesmo nas duas instâncias locais. Falta testar com um cliente de maldições diferentes (PCs diferentes).
+- **Achado à parte:** o cliente aceita o `RunStart` ainda na tela de título, sem o perfil carregado, e fica preso no loading (`Client has no progression`). O `MobShot` espera 15 s por isso.
