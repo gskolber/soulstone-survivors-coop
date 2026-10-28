@@ -57,7 +57,10 @@ com o modo de debug novo `--coop-ui-shot <pasta> --coop-ui-shot-levelup` (`Ui/Le
 - Depois pluga um **controle virtual** (dispositivo XInput do Input System alimentado com eventos de estado). Com ele:
   D-pad direita 2x (destaque 1→2→3), A (escolhe o card 3, fila 4→3), botão de reroll do controle, D-pad baixo 2x
   (esconde/mostra) e, no teclado, R (rerolls 10→9).
-- Resoluções testadas: 1920x1080 (EN), 1600x900 (PT), 2560x1080 (PT e EN), em janela sem borda.
+- Resoluções testadas: 1920x1080, 1600x900 e 2560x1080, em EN e PT, em janela sem borda.
+- **Antes/depois:** o "antes" é o master com o mesmo modo de prints (só a parte dos prints): em todas as resoluções a
+  barra de vida e os slots desenham por cima dos cards, como no print da issue. Prints em
+  `side-session-notes/…/issue5-shots/` (`before-*` = master, o resto = esta branch).
 
 O que **não** foi verificado:
 
