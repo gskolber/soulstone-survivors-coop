@@ -236,7 +236,7 @@ public static class UiShot
     }
 
     /// <summary>--coop-ui-shot-lang: the game's own language switch (its fonts too), not saved to its prefs.</summary>
-    private static bool SetGameLanguage()
+    internal static bool SetGameLanguage()
     {
         if (Lang == null) return false;
         try
@@ -259,7 +259,7 @@ public static class UiShot
         }
     }
 
-    private static void PassSplash()
+    internal static void PassSplash()
     {
         var mm = UnityEngine.Object.FindObjectOfType<MenuManager>();
         var splash = mm != null ? mm.SplashScreenPanel : null;
@@ -299,7 +299,7 @@ public static class UiShot
 
     // ---------------- hierarchy dump ----------------
 
-    private static void DumpUi(string path)
+    internal static void DumpUi(string path)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Screen {Screen.width}x{Screen.height}, language {Loc.Codes[(int)Loc.Current]}");

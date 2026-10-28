@@ -53,6 +53,7 @@ public class CoopBehaviour : MonoBehaviour
             Skills.RemoteCaster.EnsureHooked();
             Life.CoopLife.EnsureHooked();
             Life.PartnerHealth.EnsureHooked();
+            Life.PartyStatus.EnsureHooked();
             Summons.SummonSync.EnsureHooked();
         }
 
@@ -92,6 +93,7 @@ public class CoopBehaviour : MonoBehaviour
                 r.GhostRebuilds = 0;
                 r.IdentityRebuilds = 0;
                 Life.PartnerHealth.Reset(r.Slot); // its 1 s refresh fills it again, and ours goes out now
+                Life.PartyStatus.Reset(r.Slot);
                 var t = local!.gameObject.transform;
                 var spawnPos = t.position + t.right * 2f;
                 r.Ghost = VisualGhostFactory.Create(local, r, spawnPos, t.rotation, $"SoulstoneCoop_RemoteGhost{r.Slot}");
@@ -144,6 +146,9 @@ public class CoopBehaviour : MonoBehaviour
             PlayerSync.Tick(Time.unscaledDeltaTime);
             GhostOverhead.Tick(Time.unscaledDeltaTime);
             Life.PartnerHealth.Tick(Time.unscaledDeltaTime);
+            Life.PartyStatus.Tick(Time.unscaledDeltaTime);
+            Ui.PartyHud.Tick(Time.unscaledDeltaTime);
+            Ui.PartyShot.Tick(); // debug: --coop-party-shot
             Summons.SummonSync.Tick(Time.unscaledDeltaTime);
             ClientSpawnBlock.Tick(Time.unscaledDeltaTime);
             WorldTelemetry.Tick(Time.unscaledDeltaTime);

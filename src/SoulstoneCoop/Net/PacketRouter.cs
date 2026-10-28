@@ -50,6 +50,8 @@ public enum PacketType : byte
     Welcome = 102,     // host -> new client, first packet: yourSlot u8 | maxPlayers u8 | n u8 | n * slot u8 (the other clients)
     PlayerLeft = 103,  // host -> clients: slot u8 left the session (ReliableOrdered, before the slot is handed out again)
     PauseOverride = 104, // host -> clients: mask u8 of the players whose pause the host lifted (Esc closed on the host, or F4) (ReliableOrdered)
+    // 125-129: issue #7, party panel (docs/issue7-notas.md)
+    PartyStatus = 125, // either way: sender's level u16 | xp progress u8 (/255) | death guards u8, on change at <= 4 Hz + every 2 s (ReliableOrdered)
 }
 
 public static class PacketRouter
@@ -65,6 +67,7 @@ public static class PacketRouter
         PacketType.Hello or PacketType.LobbyState => DeliveryMethod.ReliableOrdered,
         // What the others see of that player: its pause, health bar, spells (visual) and summons; and its XP (team XP).
         PacketType.PauseState or PacketType.PartnerHealth or PacketType.XpShare or PacketType.DashState => DeliveryMethod.ReliableOrdered,
+        PacketType.PartyStatus => DeliveryMethod.ReliableOrdered, // issue #7: level, XP progress and revives (party panel)
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
         PacketType.SummonStates => DeliveryMethod.Sequenced,
@@ -232,6 +235,9 @@ public static class PacketRouter
                 break;
             case PacketType.PartnerHealth:
                 Life.PartnerHealth.OnPacket(reader);
+                break;
+            case PacketType.PartyStatus:
+                Life.PartyStatus.OnPacket(reader);
                 break;
             case PacketType.PauseState:
                 PauseSync.OnPauseStateReceived(reader);

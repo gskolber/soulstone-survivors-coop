@@ -768,6 +768,7 @@ public static class CoopUi
         _fallbackButton.SetActive(false);
 
         BuildPanel(rootRt);
+        PartyHud.Build(rootRt); // issue #7: nested canvas, sorted under the game's own
 
         // Banner (menu and runs): a strip of the game's transparent menu frame.
         _bannerRt = GameLook.Img(rootRt, "CoopBanner", "Menu_Frame_Transparent", null, new Color(0f, 0f, 0f, 0.7f)).rectTransform;
