@@ -27,6 +27,9 @@ public static class CoopLife
 
     private const float ReviveRadius = 2.5f;
     private const float ReviveTime = 3f;
+    /// <summary>Revive bar lost per second with nobody next to the downed player, as a fraction of the time it takes to
+    /// fill: 0.1 = a full bar takes 30 s to empty, so stepping away to dodge doesn't throw the progress away.</summary>
+    private const float ReviveDecayRate = 0.1f;
     private const float DownedInvulnerability = 1e6f;
     private const float ReviveInvulnerability = 2f;
     private const float ReviveHealthFraction = 0.5f;
@@ -490,7 +493,8 @@ public static class CoopLife
         }
         _allDownTimer = 0f;
 
-        // Each downed player fills its bar while any living ally stands within the radius; away from all, it drains twice as fast.
+        // Each downed player fills its bar while any living ally stands within the radius; away from all, it drains slowly
+        // (ReviveDecayRate), so a reviver can step out to dodge and come back.
         var downedNow = new bool[Players.MaxSlots];
         foreach (var d in Run)
         {
@@ -505,14 +509,45 @@ public static class CoopLife
                 x.y = y.y = 0f;
                 if ((x - y).sqrMagnitude <= ReviveRadius * ReviveRadius) { near = true; break; }
             }
-            _progress[d.Slot] = Mathf.Clamp01(_progress[d.Slot] + (near ? dt : -2f * dt) / ReviveTime);
+            _progress[d.Slot] = Mathf.Clamp01(_progress[d.Slot] + (near ? dt : -ReviveDecayRate * dt) / ReviveTime);
             if (_progress[d.Slot] < 1f) continue;
             _progress[d.Slot] = 0f;
             if (d.Slot == Players.HostSlot) ReviveLocal("an ally stood by");
             else SendRevive(d.Slot);
         }
         for (int s = 0; s < Players.MaxSlots; s++) if (!downedNow[s]) _progress[s] = 0f;
+        LogDowned(dt);
         SendLife(force: false);
+    }
+
+    private const float DownLogInterval = 2f;
+    private static float _downLogTimer;
+
+    /// <summary>Host, every 2 s while someone is down: where the downed player is, how far the nearest living ally is and
+    /// the revive bar, so a revive that never happens can be told apart from one nobody stood close enough for.</summary>
+    private static void LogDowned(float dt)
+    {
+        _downLogTimer += dt;
+        if (_downLogTimer < DownLogInterval) return;
+        _downLogTimer = 0f;
+        foreach (var d in Run)
+        {
+            if (!d.Down) continue;
+            float best = float.MaxValue;
+            int bestSlot = -1;
+            foreach (var a in Run)
+            {
+                if (a.Down || !a.HasPos || !d.HasPos) continue;
+                Vector3 x = a.Pos, y = d.Pos;
+                x.y = y.y = 0f;
+                float dist = (x - y).magnitude;
+                if (dist < best) { best = dist; bestSlot = a.Slot; }
+            }
+            Plugin.StaticLog.LogInfo(
+                $"[SoulstoneCoop][life] Host: slot {d.Slot} down revivable={d.Revivable} pos={(d.HasPos ? d.Pos.ToString() : "-")} " +
+                $"nearestAlly={(bestSlot >= 0 ? $"slot {bestSlot} at {best:F1} u" : "none")} (needs <= {ReviveRadius} u for {ReviveTime} s) " +
+                $"progress={_progress[d.Slot]:F2}");
+        }
     }
 
     private static bool LocalPlayerKilled()

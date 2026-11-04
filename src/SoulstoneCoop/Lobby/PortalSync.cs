@@ -387,6 +387,7 @@ public static class PortalSync
             Enemies.ClientPuppets.DropStaleFromHostScene(newMatchUp);
             Loot.LootSync.DropPendingFromOldScene();
             Enemies.ObjectiveSync.ResetForNewScene();
+            Loot.ChestSync.OnHostLeftScene();
             Plugin.StaticLog.LogInfo($"[SoulstoneCoop][portal] Client: host left its scene - stale puppets/loot dropped (our next match up: {newMatchUp}).");
         }
         catch (Exception ex)
@@ -405,6 +406,7 @@ public static class PortalSync
         Enemies.EnemyCasts.ClearMatchCaches();
         Enemies.ObjectiveSync.ResetForNewScene();
         Summons.SummonSync.OnLocalSceneGone();
+        Loot.ChestSync.OnLocalSceneGone();
     }
 }
 

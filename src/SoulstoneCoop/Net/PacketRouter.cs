@@ -27,6 +27,7 @@ public enum PacketType : byte
     RunEndRequest = 20, // client -> host: the client surrendered or took the Home portal (ReliableOrdered)
     EnemyCast = 21,    // host -> client: a boss/elite/special enemy cast, replayed visual-only on its puppet (phase 4D, ReliableUnordered)
     ObjectiveSync = 22, // host -> client: kills, tier, completed kill objectives, boss objective Current/Total, on change + every 2 s (phase 4D fix, ReliableOrdered)
+    EnemyAttackAnim = 23, // host -> clients: regular enemies' attack animations: count u8 | count * (netId u16, state hash i32, fade f32, layer u8) (Unreliable)
     // 22-29 reserved for phase 4D
     Hello = 30,        // either way: name, character, weapon, skins, mod version (phase 6, on connect and when it changes) (ReliableOrdered)
     LobbyState = 31,   // either way: sender is in the menu / loading a run / in a run (phase 6, on change) (ReliableOrdered)
@@ -52,6 +53,14 @@ public enum PacketType : byte
     PauseOverride = 104, // host -> clients: mask u8 of the players whose pause the host lifted (Esc closed on the host, or F4) (ReliableOrdered)
     // 125-129: issue #7, party panel (docs/issue7-notas.md)
     PartyStatus = 125, // either way: sender's level u16 | xp progress u8 (/255) | death guards u8, on change at <= 4 Hz + every 2 s (ReliableOrdered)
+    // 130-139: chests and ore for every player (docs/baus-notas.md)
+    RewardSpawn = 130,    // host -> clients: a chest/ore is up: id u16 | prefab name, address, task address (str) | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
+    RewardDespawn = 131,  // host -> clients: that chest is gone: id u16 | opened u8 (ReliableOrdered, after the opening's LootDrop)
+    RewardStates = 132,   // host -> clients: count u8 | count * (id u16, progress f32, players u8, speed f32), ~10 Hz while in use (Sequenced)
+    RewardPresence = 133, // client -> host: the client's player stands on (1) / left (0) chest id u16 (ReliableOrdered)
+    // 140-149: partners' skills, what the cast doesn't carry (docs/proximos-investigacao.md)
+    SkillChannelAim = 140, // either way: an open channel's aim: key str | flags u8 (1 front, 2 ground) | [front v3] [ground v3], ~10 Hz (Sequenced)
+    SkillAlwaysOn = 141,   // either way: the sender's always-on skills (rotating shields): count u8 | count * (key, type, level, extra, speed, cooldown, scale), on change + every 3 s (ReliableOrdered)
 }
 
 public static class PacketRouter
@@ -69,6 +78,8 @@ public static class PacketRouter
         PacketType.PauseState or PacketType.PartnerHealth or PacketType.XpShare or PacketType.DashState => DeliveryMethod.ReliableOrdered,
         PacketType.PartyStatus => DeliveryMethod.ReliableOrdered, // issue #7: level, XP progress and revives (party panel)
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
+        PacketType.SkillChannelAim => DeliveryMethod.Sequenced, // only the latest aim matters
+        PacketType.SkillAlwaysOn => DeliveryMethod.ReliableOrdered,
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
         PacketType.SummonStates => DeliveryMethod.Sequenced,
         // Positions go in the host's PlayersState (one packet per tick); damage, ClientState, requests: host only.
@@ -173,6 +184,9 @@ public static class PacketRouter
             case PacketType.ObjectiveSync:
                 Enemies.ObjectiveSync.OnObjectiveSync(reader);
                 break;
+            case PacketType.EnemyAttackAnim:
+                Enemies.EnemyAttackAnims.OnPacket(reader);
+                break;
             case PacketType.GodCast:
                 Enemies.GodCasts.OnGodCast(reader);
                 break;
@@ -196,6 +210,12 @@ public static class PacketRouter
                 break;
             case PacketType.SkillChannelEnd:
                 Skills.CastSync.OnSkillChannelEnd(reader);
+                break;
+            case PacketType.SkillChannelAim:
+                Skills.CastSync.OnSkillChannelAim(reader);
+                break;
+            case PacketType.SkillAlwaysOn:
+                Skills.AlwaysOnSync.OnPacket(reader);
                 break;
             case PacketType.LootDrop:
                 Loot.LootSync.OnLootDrop(reader);
@@ -238,6 +258,18 @@ public static class PacketRouter
                 break;
             case PacketType.PartyStatus:
                 Life.PartyStatus.OnPacket(reader);
+                break;
+            case PacketType.RewardSpawn:
+                Loot.ChestSync.OnSpawn(reader);
+                break;
+            case PacketType.RewardDespawn:
+                Loot.ChestSync.OnDespawn(reader);
+                break;
+            case PacketType.RewardStates:
+                Loot.ChestSync.OnStates(reader);
+                break;
+            case PacketType.RewardPresence:
+                Loot.ChestSync.OnPresence(reader);
                 break;
             case PacketType.PauseState:
                 PauseSync.OnPauseStateReceived(reader);

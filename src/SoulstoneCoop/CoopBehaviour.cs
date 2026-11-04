@@ -158,10 +158,14 @@ public class CoopBehaviour : MonoBehaviour
             Enemies.RemoteProxy.Tick(Time.unscaledDeltaTime);
             Enemies.ClientIncomingDamage.Tick(Time.unscaledDeltaTime);
             Skills.CastSync.Tick(Time.unscaledDeltaTime);
+            Skills.AlwaysOnSync.Tick(Time.unscaledDeltaTime);
             Loot.LootSync.Tick(Time.unscaledDeltaTime);
+            Loot.ChestSync.Tick(Time.unscaledDeltaTime);
+            Loot.ChestDebug.Tick(); // debug: F3 spawns a chest/ore next to the host
             Life.CoopLife.Tick(Time.unscaledDeltaTime);
             Lobby.PortalSync.Tick(Time.unscaledDeltaTime);
             Enemies.EnemyCasts.Tick(Time.unscaledDeltaTime);
+            Enemies.EnemyAttackAnims.Tick(Time.unscaledDeltaTime);
             Enemies.SpecialsDebug.Tick(Time.unscaledDeltaTime);
             Enemies.ObjectiveSync.Tick(Time.unscaledDeltaTime);
             Enemies.EnemyScaling.Tick(Time.unscaledDeltaTime);

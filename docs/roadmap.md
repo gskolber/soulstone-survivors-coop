@@ -25,30 +25,48 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | 4D, correções | Contador de bosses do cliente parado em 0/N; golpe duplo da estátua do deus no replay | `03f5232`, `4625503` |
 | Level-up | Com a build completa, o upgrade não congela a sessão (`[Coop] LevelUpPause`) | `6c7ce5f` |
 | Portais | Portais Endless e de desafio e o Reiniciar, com os dois indo juntos | `4aec2b3` |
-
-| **0.9.0** | Tudo abaixo junto, ainda sem teste em jogo (roteiro em `teste-0.9.0.md`) | — |
+| **0.9.0** | Tudo abaixo junto (roteiro em `teste-0.9.0.md`) | `26e37dd` |
 | 5, correções | Fantasma animado de novo, com arma; lançador das réplicas colado no fantasma; dash do parceiro | `568db38`, `c8876dc` |
 | 5, item 5 | Summons, companheiros e a puma do Sentinel do parceiro como clones visuais | `568db38` |
 | Level-up | Painel compacto e semitransparente pra jogar enquanto escolhe; padrão `Overlay` | `c263e20`, `efd4d89` |
 | 9 | Até 8 jogadores: slots, transportes multi-peer, repasse pelo host, lobby de 8, regras com N, escala de inimigos opcional | merge da `fase9-oito` |
-| i18n | Textos do mod no idioma do jogo de cada jogador (en e pt-BR à mão; es, fr, de, ru, zh, ja automáticos, a revisar) | branch `i18n-textos` (`i18n-notas.md`) |
+| **0.9.1** | Correções da revisão da fase 9: quem desistiu não é puxado pela vitória/portais do host, Desconectar do host no meio da run, reentrada não puxa quem desistiu, escala de inimigos só sobe limites | `dcd88fa` |
+| **0.9.2** | Tudo abaixo junto (roteiro em `teste-0.9.2.md`) | `cfd120b` |
+| Level-up | Toda escolha de upgrade no painel compacto, sem pausa em co-op; `[Coop] LevelUpPause` removido (#1) | `9289c2d` |
+| 5, dash | Rastro do dash no fantasma do parceiro, na cor do personagem (#2) | `f6ca3b8` |
+| i18n | Textos do mod no idioma do jogo de cada jogador (en e pt-BR à mão; es, fr, de, ru, zh, ja automáticos, a revisar) | `964e991` (`i18n-notas.md`) |
+| **1.0.0** | Tudo abaixo junto; jogada por duas pessoas pela Steam | `0c6067c` |
+| UI nativa | Aba e painel Co-op feitos com peças da UI do próprio jogo (`ui-nativa-notas.md`) | `227a58c` |
+| Atualização | Aviso no menu quando sai versão nova (`[Updates] CheckForUpdates`) | `c9db3b5` |
+| **1.1.0** | Tudo abaixo junto | `fc520cb` |
+| #7 | Painel do grupo no HUD: vida, nível, XP, revives e estado de cada parceiro (`issue7-notas.md`) | `f16b5fa`, `3df1ac2` |
+| #5 | Painel de upgrade fora do HUD, centrado nas cartas, com controle completo (`issue5-notas.md`) | `a961ab8` |
+| #6, #3 | Convidado acha inimigos fora das próprias listas de tier; maldições (afixos) vêm do host (`issue6-notas.md`) | `0ff2f28`, `97e8f72` |
+| **1.2.0** | Tudo abaixo junto; testado com duas janelas (`tools\test-local.cmd`) | — |
+| Baús | Baús e minérios para todos: espelho no convidado, proxy abre, mais rápido com mais gente em cima (`baus-notas.md`) | — |
+| Reviver | Barra de reviver cai devagar longe do caído; log do host a cada 2 s enquanto alguém está caído | — |
+| 4C, mira | Mira contínua do channeling do parceiro (`canal-mira-notas.md`) | — |
+| 4D, comuns | Ataque animado dos inimigos comuns no convidado (`inimigos-ataque-notas.md`) | — |
+| 4C, escudos | Escudos giratórios do parceiro (`sempre-ligadas-notas.md`) | — |
+| Ferramentas | `tools\test-local.cmd` (duas janelas conectadas no mesmo PC) e F3 (baú na frente do host) | — |
 
 ## Agora
 
-**Testar a 0.9.0**, pelo roteiro de `teste-0.9.0.md`: primeiro com 2 pela Steam, depois com 3+ por IP no mesmo PC (`fase9-notas.md`). Os bugs que aparecerem entram aqui antes de qualquer fase nova.
+A **1.2.0** está pronta (`PluginVersion` subido, notas em `releases/1.2.0.md`, README atualizado). Os itens dela foram testados com duas janelas no mesmo PC (`tools\test-local.cmd`). Antes de publicar com `tools\release.ps1`, falta uma partida pela Steam com um amigo (checklist em `teste-1.2.0.md`).
 
 ## Próximos itens
 
-| Item | Origem |
-|---|---|
-| Reconexão completa no meio da run, mantendo nível, skills e itens (hoje a reentrada experimental entra como personagem novo) | `fase8-notas.md` |
-| Baús só existem no host; o cliente recebe a parte dele mas não consegue abrir | `fase4b-notas.md` |
-| Magias replicadas: summons, auras sempre ligadas e mira contínua de channeling não aparecem | `fase4c-notas.md` |
-| Inimigos comuns não animam o ataque no cliente (o replay é só de boss, elite e especial) | `fase4d-notas.md` |
-| Modo Crusade (começa num lobby e troca de mapa no meio) | `fase6-notas.md`, `portais-notas.md` |
-| Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | `pendencias-notas.md` |
-| Host morto com cliente vivo: rever proxy e spawn | `fase3-notas.md` |
-| Skin de mod do parceiro vira a skin padrão; modelo de transformação (Ascension) e companheiros visuais da arma não aparecem no fantasma | `fase5-notas.md` |
+Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (seção indicada).
+
+| # | Item | Esforço | Origem |
+|---|---|---|---|
+| 1 | Reconexão completa no meio da run, mantendo nível, skills e itens (hoje a reentrada experimental entra como personagem novo). O jogo já salva e devolve isso entre fases do Endless (`GameModeBaseData`) | médio a grande | `fase8-notas.md`, §5 |
+| 2 | `MapTask` que qualquer jogador pode começar: o gatilho de início é um `InteractableTriggerObject`, como o dos baús (`ChestSync` serve de modelo) | pequeno a médio | `baus-notas.md` |
+| 3 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
+| — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
+| — | Host morto com cliente vivo: rever proxy e spawn | — | `fase3-notas.md` |
+| — | Skin de mod do parceiro vira a skin padrão; modelo de transformação (Ascension) e companheiros visuais da arma não aparecem no fantasma | — | `fase5-notas.md` |
+| — | Voz de "abrindo baú" do personagem do convidado não toca | — | `baus-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)
 

@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.0.** Played by two people over Steam, including the new Co-op panel; 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.2.** Played by two people over Steam, including chests and ore for every player; 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
@@ -39,22 +39,23 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Connection | Steam invite (P2P through Steam's relay, no port forwarding), invite code, direct IP; mod version check |
 | Lobby | Co-op tab in the menu; the host starts the run and the guest follows on the same map, mode, difficulty and curses |
 | Players | Up to 8 (1 host + 7 guests); the host relays each player to the others |
-| Partners | Shown with their own character, skin and weapon, Steam name, health bar, ally ring and minimap marker; smooth movement, dash and animations; their pets and summons (e.g. the Sentinel's panther) are visible |
-| Enemies | The host owns the world; the guest sees the same enemies, bosses, void hunters and specials, including boss area warnings |
+| Partners | Shown with their own character, skin and weapon, Steam name, health bar, ally ring and minimap marker; smooth movement, dash and animations; their pets and summons (e.g. the Sentinel's panther) and rotating shields are visible |
+| Enemies | The host owns the world; the guest sees the same enemies, bosses, void hunters and specials, including boss area warnings; regular enemies animate their attacks on the guest too |
 | Combat | Both players damage the same enemies; enemies chase and hit whoever is closest; statuses (slow, stun) reach the guest |
-| Skills | Each player sees the other's skills (visual only; damage is synced separately) |
+| Skills | Each player sees the other's skills (visual only; damage is synced separately), with channelled beams following their aim |
 | Progression | Team XP (whoever picks up an orb, both get it), loot and kill credit on the guest; each player keeps their own level and upgrades |
-| Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel you keep playing under (1-4 to pick) |
-| Death | Downed state, any ally standing next to you revives you, defeat only when everyone is down; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
+| Chests and ore | Appear for everyone, and anyone can open them; each extra player standing on one opens it faster (`[Coop] ChestOpenBonusPerPlayer`); the loot goes to everyone |
+| Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel at the top of the screen that you keep playing under (1-4 or the gamepad's D-pad to pick) |
+| Death | Downed state, any ally standing next to you revives you (stepping away to dodge only slowly drains the revive bar), defeat only when everyone is down; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
 | End of run | Victory, Home portal, Endless and challenge portals and Restart happen for everyone; the host surrendering ends the run for all |
 | Disconnects | Host leaving ends everyone's run with a notice; a guest leaving (or surrendering) lets the others continue |
+| Language | The mod's own texts follow the game's language: English and Portuguese written by hand; Spanish, French, German, Russian, Chinese and Japanese machine-translated |
 
 ## Known limitations
 
 - Rejoining a run in progress keeps nothing (behind `[Coop] AllowRejoin`, off by default).
-- Chests only exist for the host; the guest gets their share but can't open them.
-- Summons, always-on auras and channel aim of the partner's skills are not shown.
-- Regular enemies don't animate their attacks on the guest (bosses, elites and specials do).
+- Only the host can start a map task (the objective markers on the map); its reward chest is then shared like any other.
+- XP earned while you are down is held and given when you are revived; if nobody revives you, it is lost.
 - Crusade mode is not supported in co-op.
 
 The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
@@ -62,8 +63,7 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 ## Roadmap
 
 - Full rejoin keeping level, skills and items.
-- Chests and other interactables for the guest.
-- Partners' always-on auras.
+- Map tasks that any player can start.
 - Crusade mode.
 
 ## Settings
@@ -73,14 +73,18 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | Setting | Default | Meaning |
 |---|---|---|
 | `[Debug] LevelUpFullPanel` | `false` | Use the game's full-screen upgrade panel instead of the compact one (co-op upgrade choices never pause either way) |
-| `[Coop] LevelUpPanelPosition` | `Top` | Where the compact upgrade panel sits: `Top` (above your character) or `Bottom` (just above the health bar) |
+| `[Coop] LevelUpPanelPosition` | `Top` | Where the compact upgrade panel sits: `Top` (above your character), or `Bottom`, `BottomLeft` or `BottomRight` (just above the health bar) |
+| `[Coop] LevelUpOverlayScale` | `0.6` | Size of the compact upgrade panel (`1` = the game's size); it also shrinks to fit the screen |
+| `[Coop] LevelUpOverlayOpacity` | `0.8` | Opacity of the compact upgrade panel while the mouse isn't over it |
 | `[Coop] PartyHud` | `true` | In a run, a panel at the top left with each partner's health, level, XP, revives left and state (down, reviving, dead, disconnected) |
 | `[Coop] EndRunWhenHostLeaves` | `true` | End the guest's run when the host disconnects |
 | `[Coop] AllowRejoin` | `false` | Experimental: let the guest rejoin a run in progress (as a fresh character) |
 | `[Coop] MaxPlayers` | `8` | Lobby size (2-8) |
 | `[Coop] EnemyScalePerPlayer` | `0` | Extra enemies per additional player (try `0.25`) |
-| `[Coop] ReplicaCastRadius` | `60` | Don't draw skills of partners farther than this |
+| `[Coop] ReplicaCastRadius` | `60` | Don't draw skills of partners farther than this (also how far from a guest regular enemies' attack animations are sent) |
+| `[Coop] ChestOpenBonusPerPlayer` | `0.5` | Host: extra opening speed for chests and ore per extra player standing on them (2 players x1.5, 3 x2, at most x3); `0` = same speed as alone |
 | `[Coop] LobbyType` | `FriendsOnly` | `Public` if friends of guests can't join |
+| `[Coop] Language` | `Auto` | Language of the mod's texts: `Auto` follows the game; or `en`, `pt-BR`, `es`, `fr`, `de`, `ru`, `zh`, `ja` |
 | `[Coop] SenderClock` | `false` | Experimental: smoother remote movement on jittery connections |
 | `[Updates] CheckForUpdates` | `true` | Check GitHub at startup and say in the main menu when a newer version is out (never downloads anything); `false` = no request at all |
 | `[Updates] SkippedVersion` | `""` | Set by "Don't remind me for this version"; empty = remind about any newer release |
@@ -96,6 +100,7 @@ dotnet build src/SoulstoneCoop
 
 The build copies the plugin into the game's `BepInEx/plugins/SoulstoneCoop` (skip it with `-p:SkipDeploy=true`). If the game is installed elsewhere, pass `-p:GameDir=<path>`.
 
+- `tools/test-local.cmd` (or `tools/test-local.ps1`) builds, installs and opens two game windows on this PC that connect by IP (A hosts, B joins), then collects their logs into `dist/test-local/`. It adds `steam_appid.txt` to the game folder for the session, which is what lets the game run twice outside Steam's launcher, and removes it at the end.
 - `tools/package.ps1` builds the install zip into `dist/`.
 - `tools/release.ps1` publishes a GitHub release: it checks the tree, makes a Release build, packages it, tags `v<version>` and uploads the zip. Bump `PluginVersion` in `src/SoulstoneCoop/Plugin.cs` and put the notes in `docs/releases/<version>.md` first. `-DryRun` runs everything except the tag and the upload.
 

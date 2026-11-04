@@ -446,7 +446,10 @@ public static class CoopSession
         // Not while our own old scene is still up (portal taken): those enemies are about to be gone.
         if (place == LobbyPlace.InRun) RunSync.NoteInRun(p.Slot);
         if (place == LobbyPlace.InRun && LocalInRun && !StageTransition && NetworkManager.Role == NetRole.Host)
+        {
             Enemies.HostEnemySync.ResyncToPeer(p.Slot, "player entered the run");
+            Loot.ChestSync.ResyncToPeer(p.Slot); // and the chests / ore still up
+        }
 
         // Client: the host's old scene is gone. Everything it sent from that scene came before this packet (same
         // ordered channel), so spawns/loot still around are stale (portal or Restart inside the run).

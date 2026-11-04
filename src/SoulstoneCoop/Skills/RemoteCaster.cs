@@ -32,6 +32,10 @@ public static class RemoteCaster
         public Il2CppSystem.Func<bool>? ChannelFunc;
         public Il2CppSystem.Func<Skill, Vector3>? FrontFunc, GroundFunc;
         public Vector3 Front, Ground;
+        public Vector3 FrontTarget, GroundTarget; // latest SkillChannelAim; Front/Ground glide towards them
+        public bool HasFrontTarget, HasGroundTarget;
+        public bool AlwaysOn;              // runs every frame from Tick (AlwaysOnSync), not from casts
+        public AlwaysOnSpec? AppliedSpec;
         public float AppliedScale = -1f;
         public string Kind = "";
     }
@@ -48,11 +52,17 @@ public static class RemoteCaster
         public readonly Dictionary<string, Copy> Copies = new();
         public readonly HashSet<string> FailedKeys = new();
         public readonly Dictionary<string, bool> Channeling = new();
+        public readonly Dictionary<string, AlwaysOnSpec> AlwaysOnWanted = new(); // that player's always-on skills (SkillAlwaysOn)
         public IntPtr AnimGhostPtr;
         public Animator[]? GhostAnimators;
     }
 
     private static readonly Dictionary<byte, Caster> Casters = new();
+
+    /// <summary>What shapes one always-on skill of a partner (AlwaysOnSync): level, extra projectiles, rotation speed,
+    /// projectile cooldown and the adjusted scale (applied like a cast's, ApplyFidelity).</summary>
+    internal sealed record AlwaysOnSpec(int Type, byte Level, int Extra, float Speed, float Cooldown, float Scale);
+    private static int _alwaysOnErrors;
     private static readonly HashSet<IntPtr> CasterPtrs = new();
     private static readonly HashSet<IntPtr> StatsPtrs = new();
     private static Team _originalTeam;
@@ -137,6 +147,10 @@ public static class RemoteCaster
         {
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] RemoteCaster.Tick: {ex}");
         }
+        try { GlideAim(unscaledDeltaTime); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] GlideAim: {ex.Message}"); }
+        try { UpdateAlwaysOn(); }
+        catch (Exception ex) { if (_alwaysOnErrors++ < 5) Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] UpdateAlwaysOn: {ex}"); }
         RunProbes();
     }
 
@@ -395,6 +409,7 @@ public static class RemoteCaster
         var e = c.Entity;
         var copies = c.Copies.Values.ToArray();
         ForgetCaster(c);
+        c.AlwaysOnWanted.Clear(); // out of the run: its next SkillAlwaysOn brings them back
         Probes.RemoveAll(p => p.Caster == c);
         if (e == null) return;
         try
@@ -589,6 +604,7 @@ public static class RemoteCaster
 
             c.Front = m.Has(CastMessage.FFront) ? m.Front : tr.position + tr.forward * 5f;
             c.Ground = m.Has(CastMessage.FGround) ? m.Ground : c.Front;
+            c.HasFrontTarget = c.HasGroundTarget = false; // a new cast starts from its own aim
             bool wantChannel = m.Has(CastMessage.FChannel), wantFront = m.Has(CastMessage.FFrontFunc), wantGround = m.Has(CastMessage.FGroundFunc);
             if ((wantChannel || wantFront || wantGround) && !TryGetFuncs(caster, c, wantChannel, wantFront, wantGround)) return PlayResult.Error;
             if (wantChannel)
@@ -612,6 +628,97 @@ public static class RemoteCaster
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] Playing '{m.Key}' for slot {slot}: {ex}");
             return PlayResult.Error;
         }
+    }
+
+    /// <summary>SkillChannelAim: where that player's open channel points now. Only for a channel we are playing.</summary>
+    internal static void OnChannelAim(byte slot, string key, byte flags, Vector3 front, Vector3 ground)
+    {
+        if (!Casters.TryGetValue(slot, out var c) || !c.Copies.TryGetValue(key, out var copy)) return;
+        if (!c.Channeling.TryGetValue(key, out bool on) || !on) return;
+        if ((flags & 1) != 0) { copy.FrontTarget = front; copy.HasFrontTarget = true; }
+        if ((flags & 2) != 0) { copy.GroundTarget = ground; copy.HasGroundTarget = true; }
+    }
+
+    /// <summary>SkillAlwaysOn: that player's whole list of always-on skills (empty = none).</summary>
+    internal static void SetAlwaysOn(byte slot, List<(string Key, AlwaysOnSpec Spec)> list)
+    {
+        var caster = CasterFor(slot);
+        bool same = caster.AlwaysOnWanted.Count == list.Count;
+        if (same) foreach (var (key, spec) in list) if (!caster.AlwaysOnWanted.TryGetValue(key, out var have) || have != spec) { same = false; break; }
+        if (same) return;
+        caster.AlwaysOnWanted.Clear();
+        foreach (var (key, spec) in list) caster.AlwaysOnWanted[key] = spec;
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Slot {slot} always-on skills: {(list.Count > 0 ? string.Join(", ", list.Select(e => $"{e.Key}(+{e.Spec.Extra})")) : "none")}.");
+    }
+
+    /// <summary>Every frame: run each wanted always-on skill's OnUpdate on that player's caster, stop the others.
+    /// While the player is down (or there's no caster) they all stop, and come back with it.</summary>
+    private static void UpdateAlwaysOn()
+    {
+        List<string>? stop = null;
+        foreach (var caster in Casters.Values)
+        {
+            bool active = caster.Entity != null && _matchStarted && !Life.CoopLife.IsRemoteDown(caster.Slot);
+            stop?.Clear();
+            foreach (var kv in caster.Copies)
+                if (kv.Value.AlwaysOn && (!active || !caster.AlwaysOnWanted.ContainsKey(kv.Key))) (stop ??= new List<string>()).Add(kv.Key);
+            if (stop != null) foreach (var key in stop) StopAlwaysOn(caster, key, active ? "no longer used" : "player down or no caster");
+            if (!active || caster.AlwaysOnWanted.Count == 0) continue;
+
+            foreach (var kv in caster.AlwaysOnWanted)
+            {
+                if (caster.FailedKeys.Contains(kv.Key)) continue;
+                var c = GetOrCreateCopy(caster, kv.Key, (SkillType)kv.Value.Type);
+                var rs = c != null ? c.Skill.TryCast<RotatingShieldSkill>() : null;
+                if (c == null || rs == null) continue;
+                try
+                {
+                    if (!c.AlwaysOn || c.AppliedSpec != kv.Value)
+                    {
+                        var spec = kv.Value;
+                        if (spec.Level > 0) c.Skill.SkillLevel = spec.Level;
+                        rs.ExtraProjectiles = spec.Extra;
+                        rs.RotationSpeed = spec.Speed;
+                        if (spec.Cooldown > 0f) rs.ProjectileCooldown = spec.Cooldown;
+                        ApplyFidelity(caster, c, new CastMessage { Level = spec.Level, Scale = spec.Scale });
+                        if (!c.AlwaysOn)
+                            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Slot {caster.Slot}: always-on '{kv.Key}' running on its caster ({rs.BaseProjectiles}+{spec.Extra} projectiles, speed {spec.Speed:F0}).");
+                        c.AlwaysOn = true;
+                        c.AppliedSpec = spec;
+                    }
+                    rs.OnUpdate();
+                }
+                catch (Exception ex)
+                {
+                    caster.FailedKeys.Add(kv.Key); // stops trying this one for the match
+                    if (_alwaysOnErrors++ < 5) Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] Always-on '{kv.Key}' for slot {caster.Slot}: {ex}");
+                    StopAlwaysOn(caster, kv.Key, "error");
+                    break; // FailedKeys / Copies changed: next frame
+                }
+            }
+        }
+    }
+
+    /// <summary>Recycle ends its projectiles (RotatingShieldSkill.Recycle 0x55E010), then the copy goes (DestroyCopy).</summary>
+    private static void StopAlwaysOn(Caster caster, string key, string why)
+    {
+        if (!caster.Copies.TryGetValue(key, out var c)) return;
+        caster.Copies.Remove(key);
+        DestroyCopy(c);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Slot {caster.Slot}: always-on '{key}' stopped ({why}).");
+    }
+
+    /// <summary>Open channels' aim glides to the latest SkillChannelAim (packets come ~10 Hz; the skill reads it every frame).</summary>
+    private static void GlideAim(float dt)
+    {
+        float k = 1f - Mathf.Exp(-15f * dt);
+        foreach (var caster in Casters.Values)
+            foreach (var kv in caster.Channeling)
+            {
+                if (!kv.Value || !caster.Copies.TryGetValue(kv.Key, out var copy)) continue;
+                if (copy.HasFrontTarget) copy.Front = Vector3.Lerp(copy.Front, copy.FrontTarget, k);
+                if (copy.HasGroundTarget) copy.Ground = Vector3.Lerp(copy.Ground, copy.GroundTarget, k);
+            }
     }
 
     internal static void OnChannelEnd(byte slot, string key)

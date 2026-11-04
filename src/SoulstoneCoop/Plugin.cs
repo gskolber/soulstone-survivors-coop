@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.1.0";
+    public const string PluginVersion = "1.2.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -24,6 +24,7 @@ public class Plugin : BasePlugin
     internal static BepInEx.Configuration.ConfigEntry<SteamLobbyType> LobbyType = null!;
     internal static BepInEx.Configuration.ConfigEntry<float> EnemyScalePerPlayer = null!;
     internal static BepInEx.Configuration.ConfigEntry<float> ReplicaCastRadius = null!;
+    internal static BepInEx.Configuration.ConfigEntry<float> ChestOpenBonusPerPlayer = null!;
 
     /// <summary>Phase 9: who may join the Steam lobby ([Coop] LobbyType).</summary>
     public enum SteamLobbyType { FriendsOnly, Public, Private }
@@ -69,6 +70,10 @@ public class Plugin : BasePlugin
         ReplicaCastRadius = Config.Bind("Coop", "ReplicaCastRadius", 60f,
             "Spells of the other players are only replayed (visual only) when they are within this distance of you; farther ones are off screen anyway. " +
             "Saves the effects of 7 builds on every PC. 0 = always replay.");
+        ChestOpenBonusPerPlayer = Config.Bind("Coop", "ChestOpenBonusPerPlayer", 0.5f, new BepInEx.Configuration.ConfigDescription(
+            "Host: chests and ore open faster with more players standing on them: + this much speed for each extra player " +
+            "(0.5: 2 players x1.5, 3 players x2, at most x3). 0 = the same speed as alone.",
+            new BepInEx.Configuration.AcceptableValueRange<float>(0f, 2f)));
         _simLatency = simLatency.Value;
         _simJitter = simJitter.Value;
         _simLoss = simLoss.Value;
@@ -79,6 +84,12 @@ public class Plugin : BasePlugin
 
         var harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(Plugin).Assembly);
+
+        // Chests and ore for every player: patched by hand, each patch on its own (a failure only turns that part off).
+        try { Loot.ChestSync.ApplyPatches(harmony); }
+        catch (System.Exception ex) { Log.LogError($"Chest sync patches: {ex}"); }
+        // Regular enemies' attack animations on the guests: by hand too.
+        Enemies.EnemyAttackAnims.ApplyPatch(harmony);
 
         // Patched by hand: its by-value struct parameter (EntityByEnemyPrefabData) is the kind of signature
         // Il2CppInterop trampolines can choke on, and a failure here must not take the other patches down.

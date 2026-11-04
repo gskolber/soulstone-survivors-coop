@@ -73,6 +73,9 @@ public sealed class CastMessage
 /// the other side's RemoteCaster. Visual only - the damage keeps flowing through phase 3 (ClientDamage /
 /// DamageToClient). Channeled skills also get a SkillChannelEnd when the local channel stops.
 /// SkillCast and SkillChannelEnd share ReliableOrdered: an end must never overtake its start.
+/// While a channel is open, its aim (what the skill's GetTargetFrontPosition / GetTargetFrontPositionGround funcs
+/// return, re-read by ChannelingSkill.OnUpdate 0x516B00 every frame) goes out ~10 times a second as SkillChannelAim
+/// (Sequenced), so the partner's beam follows the cursor instead of staying where the cast started.
 /// </summary>
 public static class CastSync
 {
@@ -89,7 +92,14 @@ public static class CastSync
         public ChannelingSkill? Skill;
         public bool SeenTrue;
         public float Age;
+        // Aim: the cast's own funcs, invoked with the skill that was cast.
+        public Skill? Owner;
+        public Il2CppSystem.Func<Skill, Vector3>? FrontFunc, GroundFunc;
+        public float AimTimer;
     }
+
+    private const float AimInterval = 0.1f;
+    private static int _aimSent, _aimRecv, _aimErrors;
 
     private static readonly Dictionary<string, OpenChannel> LocalChannels = new();
 
@@ -132,18 +142,20 @@ public static class CastSync
                 $"[SoulstoneCoop][casts] {NetworkManager.Role}: sent={_sent} ({_bytesSent} B) recv={_recv} played={_played} failed={failed} " +
                 $"(noCaster={_noCaster} noSkill={_noSkill} rejected={_rejected} error={_errors}) skippedSummon={_skippedSummon} " +
                 $"captureErrors={_captureErrors} channelEnds={_channelEndsSent}/{_channelEndsRecv} openChannels={RemoteCaster.OpenChannels}/{LocalChannels.Count} " +
+                $"aim={_aimSent}/{_aimRecv}{(_aimErrors > 0 ? $" aimErrors={_aimErrors}" : "")} " +
                 $"blockedEffects={_blockedEffects} blockedDamage={_blockedDamage} numbersHidden={numbersHidden} culledFar={_culledFar} caster={RemoteCaster.Active} copies={RemoteCaster.CopyCount} " +
                 $"ghostAnim={RemoteCaster.GhostAnimPlayed}/{RemoteCaster.GhostAnimPlayed + RemoteCaster.GhostAnimMissing}");
             RemoteCaster.GhostAnimPlayed = RemoteCaster.GhostAnimMissing = 0;
         }
         _sent = _recv = _played = _noCaster = _noSkill = _rejected = _errors = _skippedSummon = _captureErrors = 0;
         _channelEndsSent = _channelEndsRecv = _blockedEffects = _blockedDamage = _bytesSent = _culledFar = 0;
+        _aimSent = _aimRecv = 0;
     }
 
     // ---------------- sender ----------------
 
     /// <summary>"ArcaneMissiles-Skill(Clone)" -> "ArcaneMissiles-Skill", the name under Resources/Skill-Prefabs.</summary>
-    private static string KeyOf(Skill skill)
+    internal static string KeyOf(Skill skill)
     {
         string name = skill.gameObject.name;
         int i = name.IndexOf("(Clone)", StringComparison.Ordinal);
@@ -199,7 +211,20 @@ public static class CastSync
         _bytesSent += w.Length;
 
         if (channel != null && !LocalChannels.ContainsKey(key))
-            LocalChannels[key] = new OpenChannel { Key = key, Func = channel, Skill = skill.TryCast<ChannelingSkill>() };
+        {
+            Il2CppSystem.Func<Skill, Vector3>? front = null, ground = null;
+            try
+            {
+                if (m.Has(CastMessage.FFrontFunc)) front = p.GetTargetFrontPosition;
+                if (m.Has(CastMessage.FGroundFunc)) ground = p.GetTargetFrontPositionGround;
+            }
+            catch (Exception ex) { _aimErrors++; Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Aim funcs of '{key}': {ex.Message}"); }
+            LocalChannels[key] = new OpenChannel
+            {
+                Key = key, Func = channel, Skill = skill.TryCast<ChannelingSkill>(),
+                Owner = skill, FrontFunc = front, GroundFunc = ground,
+            };
+        }
 
         if (LoggedKeys.Add(key))
         {
@@ -229,7 +254,7 @@ public static class CastSync
                 }
             }
             catch { on = false; }
-            if (on) continue;
+            if (on) { SendAim(ch, dt); continue; }
             (ended ??= new List<string>()).Add(ch.Key);
         }
         if (ended == null) return;
@@ -243,6 +268,39 @@ public static class CastSync
             NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
             _channelEndsSent++;
         }
+    }
+
+    /// <summary>An open channel's current aim, ~10 times a second. The funcs are the ones the local skill polls itself
+    /// (the auto-aim / cursor position), so this is exactly where our own beam points right now.</summary>
+    private static void SendAim(OpenChannel ch, float dt)
+    {
+        if (ch.Owner == null || (ch.FrontFunc == null && ch.GroundFunc == null)) return;
+        ch.AimTimer += dt;
+        if (ch.AimTimer < AimInterval || !NetworkManager.HasPeer) return;
+        ch.AimTimer = 0f;
+        byte flags = 0;
+        Vector3 front = default, ground = default;
+        try
+        {
+            if (ch.FrontFunc != null) { front = ch.FrontFunc.Invoke(ch.Owner); flags |= 1; }
+            if (ch.GroundFunc != null) { ground = ch.GroundFunc.Invoke(ch.Owner); flags |= 2; }
+        }
+        catch (Exception ex)
+        {
+            // A func that throws once will again: stop sending this channel's aim (the cast's start aim stays).
+            ch.FrontFunc = ch.GroundFunc = null;
+            if (_aimErrors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Aim of '{ch.Key}': {ex.Message}");
+            return;
+        }
+        var w = new NetDataWriter();
+        w.Put((byte)PacketType.SkillChannelAim);
+        w.Put(ch.Key);
+        w.Put(flags);
+        if ((flags & 1) != 0) { w.Put(front.x); w.Put(front.y); w.Put(front.z); }
+        if ((flags & 2) != 0) { w.Put(ground.x); w.Put(ground.y); w.Put(ground.z); }
+        NetworkManager.Send(w, DeliveryMethod.Sequenced);
+        _aimSent++;
+        _bytesSent += w.Length;
     }
 
     private static byte ClampByte(int v) => (byte)Mathf.Clamp(v, 0, 255);
@@ -262,6 +320,17 @@ public static class CastSync
             case RemoteCaster.PlayResult.Culled: _culledFar++; break;
             default: _errors++; break;
         }
+    }
+
+    public static void OnSkillChannelAim(NetDataReader reader)
+    {
+        string key = reader.GetString();
+        byte flags = reader.GetByte();
+        Vector3 front = default, ground = default;
+        if ((flags & 1) != 0) front = new Vector3(reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
+        if ((flags & 2) != 0) ground = new Vector3(reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
+        _aimRecv++;
+        RemoteCaster.OnChannelAim(PacketRouter.From, key, flags, front, ground);
     }
 
     public static void OnSkillChannelEnd(NetDataReader reader)
