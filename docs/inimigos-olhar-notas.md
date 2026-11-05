@@ -18,6 +18,18 @@ Com alvo, a marionete passa para `RotationMode.LookTowardsTarget` com o transfor
 
 Só muda o visual no convidado; no host nada muda.
 
+## 1.4.1: em movimento, sempre para onde anda
+
+No teste da 1.4.0 ainda havia inimigos andando de costas em direção a B. A checagem só reaplicava o modo de rotação quando o alvo mudava; um ataque replicado (ou a IA do jogo) troca o modo para `LookTowardsTarget` com o alvo dele, em geral o fantasma do host, e a marionete ficava olhando para lá pelo resto da vida. Marionetes movidas por `SetPosition` (sem path following) nem giravam sozinhas.
+
+- Em movimento (velocidade do host ≥ 0,6 u/s), a marionete gira todo frame para a direção de deslocamento suavizada (`RotateTowards`).
+- A cada checagem (5 por segundo), se o modo atual não é o esperado (`LookTowardsTarget` com o jogador quando parada e perto, senão o modo livre), ele é reaplicado.
+- Parada e sem jogador perto: o yaw do host, como antes.
+- **Segundo teste:** a Morte ainda andava em passinhos. Ela usa path following, e o alvo ficava só `vel × 0,1 s` à frente, dentro de `ArriveDistance` (0,15 u): chegava, levava `StopMovement`, voltava a andar no snapshot seguinte. Agora, enquanto o inimigo do host anda, o agente mira pelo menos `MinMoveLead` (1 u) à frente na direção do deslocamento e nunca é parado. O limiar de "andando" (`FaceStillSpeed`) caiu de 0,6 para 0,2 u/s, porque a caminhada lenta da Morte contava como parada.
+- Telemetria: `[puppets] facing: targetChanges=N modeReasserts=N errors=N`. `modeReasserts` alto mostra que algo do jogo está trocando o modo.
+
+- **Terceiro teste:** ainda "anda, para, anda". O `ModifiedCharacter` (ECM2) para dentro do próprio `stoppingDistance` (num corpo a corpo, mais ou menos o alcance) e freia dentro de `brakingDistance`: um alvo a 1 u estava sempre "chegado". Enquanto o inimigo do host anda, a marionete fica com `stoppingDistance` 0, `autoBraking` desligado e `_maxWalkSpeed` ajustado para que `GetMaxSpeed()` seja a velocidade medida do host mais uma correção (2 × o atraso ao longo do caminho, limitada). Tudo volta ao original quando ela para ou é reciclada (instâncias do pool). Log, uma vez por tipo: `Walk '<chave>': own max speed …, host speed …, stopping …, braking …`.
+
 ## Como testar
 
 No convidado (B):
@@ -26,3 +38,4 @@ No convidado (B):
 - os de longe, parados atirando, ficam virados para B;
 - com o host caído (F9 em A), os que atacam B ficam virados para ele;
 - um inimigo passando longe continua virado para onde anda.
+- 1.4.1: inimigos que acabaram de atacar o host e vão atrás de B andam de frente para B, longe ou perto do host.

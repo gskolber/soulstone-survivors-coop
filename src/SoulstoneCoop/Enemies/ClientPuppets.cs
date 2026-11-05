@@ -22,7 +22,9 @@ public static class ClientPuppets
     private const float MaxExtrapolation = 0.25f;
     // Facing (docs/inimigos-olhar-notas.md): close enemies look at the player they are fighting.
     private const float FaceRange = 14f;         // u: face the nearest living player within this...
-    private const float FaceStillSpeed = 0.6f;   // u/s: ...only while the host's enemy is (nearly) standing still
+    private const float FaceStillSpeed = 0.2f;   // u/s: ...only while the host's enemy is (nearly) standing still
+                                                 // (1.4.1: was 0.6, which counted Death's slow walk as standing)
+    private const float MinMoveLead = 1f;        // u: 1.4.1, a walking path-follower always aims at least this far ahead
     private const float FaceCheckInterval = 0.2f;
     private const float TelemetryInterval = 5f;
 
@@ -50,6 +52,11 @@ public static class ClientPuppets
         public RotationMode OrigRotationMode;
         public bool HasOrigRotationMode;
         public float FaceCheckAt;
+        public Vector3 MoveDir;  // 1.4.1: smoothed horizontal direction of travel (from the host's samples)
+        // 1.4.1: the ECM2 walk settings we override while the host's enemy walks (restored when it stops / is recycled)
+        public bool WalkTuned;
+        public float OrigStopping, OrigBraking, OrigMaxWalk, SpeedFactor;
+        public bool OrigAutoBraking;
         public bool IsEnemy, IsEnemyKnown;
 
         public bool Dead;        // host said Died; playing the local death, local dissolve recycles it
@@ -338,6 +345,8 @@ public static class ClientPuppets
                         $"bossBars={GameManagerUtil.BossEntities?.Count ?? -1} summonRetries={RetryUntil.Count} maxHealthMatched={_maxHealthMatched}");
                 Plugin.StaticLog.LogInfo(
                     $"[SoulstoneCoop][damage] Client: hits={_dmgHits} damage={_dmgSum:F0} packets={_dmgPackets} skippedEnemyAttacker={_dmgSkippedEnemyAttacker}");
+                Plugin.StaticLog.LogInfo($"[SoulstoneCoop][puppets] facing: targetChanges={_faceChanges} modeReasserts={_faceReasserts} errors={_faceErrors}");
+                _faceChanges = _faceReasserts = 0;
             }
             _snapshotsRecv = _slicesRecv = _snapshotBytes = _unknownNetIds = _teleports = _clampedHits = _killCredits = 0;
             _dmgHits = _dmgPackets = _dmgSkippedEnemyAttacker = 0;
@@ -388,10 +397,38 @@ public static class ClientPuppets
         }
 
         UpdateFacing(p, ch, actual, vel, now);
-        if (Horizontal(target - actual) > ArriveDistance)
+        // 1.4.1: on the move the puppet always turns toward where it travels, whatever rotation mode it was left in
+        // (an attack replay sets LookTowardsTarget at its own target, often the host's ghost: walking toward a guest
+        // while looking at the host was the moonwalk). Puppets moved with SetPosition don't turn by themselves at all.
+        bool moving = Horizontal(vel) >= FaceStillSpeed;
+        if (moving)
+        {
+            var v = vel; v.y = 0f;
+            var want = v.normalized;
+            p.MoveDir = p.MoveDir.sqrMagnitude < 0.01f ? want : Vector3.Slerp(p.MoveDir, want, 1f - Mathf.Exp(-10f * Time.deltaTime));
+            if (p.MoveDir.sqrMagnitude > 0.01f) ch.RotateTowards(p.MoveDir, true, true);
+        }
+        // 1.4.1: a slow walker (Death) aimed only vel*0.1 s ahead, inside ArriveDistance: it reached the point, got
+        // StopMovement, started again on the next snapshot, and shuffled in small steps. While the host's enemy walks,
+        // the agent aims at least MinMoveLead ahead along its travel and is never stopped.
+        bool walkAgent = moving && p.UsePathFollowing;
+        if (walkAgent)
+        {
+            var ahead = target - hostNow; ahead.y = 0f;
+            float lead = Horizontal(ahead);
+            if (lead < MinMoveLead && p.MoveDir.sqrMagnitude > 0.01f) target = hostNow + p.MoveDir * MinMoveLead;
+        }
+        if (walkAgent) TuneWalk(p, ch, Horizontal(vel), Vector3.Dot(hostNow - actual, p.MoveDir));
+        else if (p.WalkTuned) RestoreWalk(p);
+        if (walkAgent || Horizontal(target - actual) > ArriveDistance)
         {
             if (p.UsePathFollowing) ch.MoveToLocation(target);
             else ch.SetPosition(Vector3.MoveTowards(actual, target, Mathf.Max(vel.magnitude, 1f) * Time.deltaTime * 1.5f));
+            if (!moving && p.LookPtr == IntPtr.Zero)
+            {
+                float yr = p.Yaw * Mathf.Deg2Rad;
+                ch.RotateTowards(new Vector3(Mathf.Sin(yr), 0f, Mathf.Cos(yr)), true, true);
+            }
         }
         else
         {
@@ -402,10 +439,63 @@ public static class ClientPuppets
         }
     }
 
+    private static readonly HashSet<string> LoggedWalk = new();
+    private static int _walkErrors;
+
+    /// <summary>1.4.1 (Death's small steps): a walking path-follower copies the host's speed instead of its own. ECM2's
+    /// ModifiedCharacter stops inside its stoppingDistance (a melee enemy's is about its reach) and brakes inside
+    /// brakingDistance, so a target only ~1 u ahead was always "arrived": stop, then go on the next snapshot. While the
+    /// host's enemy walks: stoppingDistance 0, no auto braking, and _maxWalkSpeed scaled so GetMaxSpeed() is the host's
+    /// measured speed plus a small catch-up toward where the host has it. Restored by RestoreWalk.</summary>
+    private static void TuneWalk(Puppet p, ModifiedCharacter ch, float hostSpeed, float behind)
+    {
+        try
+        {
+            if (!p.WalkTuned)
+            {
+                p.OrigStopping = ch.stoppingDistance;
+                p.OrigBraking = ch.brakingDistance;
+                p.OrigAutoBraking = ch.autoBraking;
+                p.OrigMaxWalk = ch._maxWalkSpeed;
+                float max = ch.GetMaxSpeed();
+                p.SpeedFactor = p.OrigMaxWalk > 0.01f && max > 0.01f ? max / p.OrigMaxWalk : 1f; // the game's modifiers on top
+                p.WalkTuned = true;
+                ch.stoppingDistance = 0f;
+                ch.autoBraking = false;
+                if (LoggedWalk.Count < 40 && LoggedWalk.Add(p.Key))
+                    Plugin.StaticLog.LogInfo($"[SoulstoneCoop][puppets] Walk '{p.Key}': own max speed {max:F2} (walk {p.OrigMaxWalk:F2}), host speed {hostSpeed:F2}, stopping {p.OrigStopping:F2}, braking {p.OrigBraking:F2} auto={p.OrigAutoBraking}.");
+            }
+            float catchUp = Mathf.Clamp(behind * 2f, -0.5f * hostSpeed, 2f);
+            float want = Mathf.Max(0.05f, hostSpeed + catchUp);
+            ch._maxWalkSpeed = want / Mathf.Max(0.05f, p.SpeedFactor);
+        }
+        catch (Exception ex)
+        {
+            if (_walkErrors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][puppets] Walk tuning #{p.NetId}: {ex.Message}");
+        }
+    }
+
+    private static void RestoreWalk(Puppet p)
+    {
+        if (!p.WalkTuned) return;
+        p.WalkTuned = false;
+        try
+        {
+            var ch = p.Character;
+            if (ch == null) return;
+            ch.stoppingDistance = p.OrigStopping;
+            ch.brakingDistance = p.OrigBraking;
+            ch.autoBraking = p.OrigAutoBraking;
+            ch._maxWalkSpeed = p.OrigMaxWalk;
+        }
+        catch { /* the entity is gone */ }
+    }
+
     private static readonly List<Transform> FaceCandidates = new();
     private static readonly List<Puppet> TickList = new();
     private static int _faceFrame = -1;
     private static int _faceErrors;
+    private static int _faceChanges, _faceReasserts; // 1.4.1 telemetry: target switches / modes put back after an override
 
     /// <summary>The players an enemy here could be fighting: us and every ghost, while up (once per frame).</summary>
     private static List<Transform> LivingPlayerTransforms()
@@ -452,11 +542,19 @@ public static class ClientPuppets
                 }
             }
             var want = best != null ? best.Pointer : IntPtr.Zero;
-            if (want == p.LookPtr && p.HasOrigRotationMode) return;
             // First look at this puppet: remember its own mode (a pooled instance may still carry our LookTowardsTarget).
             if (!p.HasOrigRotationMode) { p.OrigRotationMode = ch.GetRotationMode(); p.HasOrigRotationMode = true; }
+            var freeMode = p.OrigRotationMode == RotationMode.LookTowardsTarget ? RotationMode.OrientToMovement : p.OrigRotationMode;
+            var mode = best != null ? RotationMode.LookTowardsTarget : freeMode;
+            // 1.4.1: also re-applied when something else changed the mode since (an attack replay, the game's own AI):
+            // otherwise the puppet kept looking at that skill's target, typically the host, for the rest of its life.
+            // A look target is set again on every check: a replay can switch it to its own target with the same mode.
+            bool modeOk = ch.GetRotationMode() == mode;
+            if (want == p.LookPtr && modeOk && best == null) return;
             if (best != null) ch.SetRotationMode(RotationMode.LookTowardsTarget, best);
-            else ch.SetRotationMode(p.OrigRotationMode == RotationMode.LookTowardsTarget ? RotationMode.OrientToMovement : p.OrigRotationMode, null!);
+            else ch.SetRotationMode(freeMode, null!);
+            if (want != p.LookPtr) _faceChanges++;
+            else if (!modeOk) _faceReasserts++;
             p.LookPtr = want;
         }
         catch (Exception ex)
@@ -826,6 +924,7 @@ public static class ClientPuppets
 
     private static void RemoveTracking(Puppet p)
     {
+        RestoreWalk(p); // pooled: the next enemy from this instance must get the prefab's walk settings back
         if (ByNetId.TryGetValue(p.NetId, out var cur) && cur == p) ByNetId.Remove(p.NetId);
         ByPtr.Remove(p.Ptr);
         if (p.StatsPtr != IntPtr.Zero && ByStatsPtr.TryGetValue(p.StatsPtr, out var sp) && sp == p) ByStatsPtr.Remove(p.StatsPtr);

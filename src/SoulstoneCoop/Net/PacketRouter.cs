@@ -63,9 +63,10 @@ public enum PacketType : byte
     // 140-149: partners' skills, what the cast doesn't carry (docs/proximos-investigacao.md)
     SkillChannelAim = 140, // either way: an open channel's aim: key str | flags u8 (1 front, 2 ground) | [front v3] [ground v3], ~10 Hz (Sequenced)
     ModelState = 142,      // either way: the sender's active character models (ascension...): count u8 | count * (name str | path str | scale f32) | rootScale f32, on change + every 3 s (ReliableOrdered)
-    PassiveSpawn = 143,    // either way: one of the sender's passive / mini-game objects is up: id u16 | type u8 | name str | pos 3f | yaw f32 | scale f32 (ReliableOrdered, resent every 3 s)
+    PassiveSpawn = 143,    // either way: one of the sender's passive / mini-game objects is up: id u16 | type u8 | name str | pos 3f | yaw f32 | scale f32 [| radius f32, 1.4.1] (ReliableOrdered, resent every 3 s)
     PassiveDespawn = 144,  // either way: that object is gone: id u16 (ReliableOrdered)
     PassiveStates = 145,   // either way: count u8 | count * (id u16 | pos 3f | yaw f32), only what moved, ~10 Hz (Sequenced)
+    PassiveParts = 147,    // either way, 1.4.1: parts of one passive object: id u16 | count u8 | count * (path hash u32 | active u8 | localScale 3f), on change 5 Hz + full every 3 s (ReliableOrdered)
     AscensionFx = 146,     // either way: one effect of the sender's ascension / mechanic (VFX, sound, world light), see AscensionFx (ReliableUnordered)
     SkillAlwaysOn = 141,   // either way: the sender's always-on skills (rotating shields): count u8 | count * (key, type, level, extra, speed, cooldown, scale), on change + every 3 s (ReliableOrdered)
 }
@@ -87,7 +88,7 @@ public static class PacketRouter
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
         PacketType.SkillChannelAim => DeliveryMethod.Sequenced, // only the latest aim matters
         PacketType.SkillAlwaysOn => DeliveryMethod.ReliableOrdered,
-        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn => DeliveryMethod.ReliableOrdered,
+        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn or PacketType.PassiveParts => DeliveryMethod.ReliableOrdered,
         PacketType.PassiveStates => DeliveryMethod.Sequenced,
         PacketType.AscensionFx => DeliveryMethod.ReliableUnordered,
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
@@ -241,6 +242,9 @@ public static class PacketRouter
                 break;
             case PacketType.PassiveStates:
                 Summons.PassiveObjectSync.OnStates(reader);
+                break;
+            case PacketType.PassiveParts:
+                Summons.PassiveObjectSync.OnParts(reader);
                 break;
             case PacketType.TaskObjective:
                 Loot.TaskObjectiveSync.OnPacket(reader);

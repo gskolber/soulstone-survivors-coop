@@ -70,10 +70,15 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
 | Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
 | Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
+| **1.4.1** | Correções do teste da 1.4.0 (sem commit) | — |
+| Morte | Agente que anda mira ≥ 1 u à frente, sem `StopMovement`, `stoppingDistance` 0, sem freio e na velocidade medida do host; limiar de movimento 0,6 → 0,2 u/s (`inimigos-olhar-notas.md`) | — |
+| Olhar | Inimigo em movimento sempre vira para onde anda, mesmo depois de um ataque replicado ter trocado o modo de rotação; modo esperado reaplicado a cada checagem (`inimigos-olhar-notas.md`) | — |
+| Passivas | Estado das partes (ligado/escala) do objeto do dono aplicado na cópia, genérico para todos os heróis (`PassiveParts = 147`) (`passivas-notas.md`) | — |
+| Passivas | Prefabs de mini-jogo de `Resources` `powers/` e árvore de habilidades do dono carregados sob demanda para achar o prefab de verdade; marcador no tamanho da área real (raio enviado no `PassiveSpawn`) (`passivas-notas.md`) | — |
 
 ## Agora
 
-A **1.4.0** está com commit (`PluginVersion` subido, notas em `releases/1.4.0.md`, README atualizado). Ela junta a 1.3.0 e a 1.3.1, nunca publicadas sozinhas. A 1.3.1 e a 1.4.0 ainda não foram compiladas nem testadas: a próxima rodada é `tools\test-local.cmd` com os roteiros de `ascensao-notas.md`, `passivas-notas.md`, `inimigos-olhar-notas.md` e `reentrada-notas.md`. Antes de publicar com `tools\release.ps1`, falta uma partida pela Steam com um amigo (checklist em `teste-1.3.0.md`).
+A **1.4.0** está com commit (`869a4fa`); a **1.4.1** (olhar dos inimigos em movimento e a área do Demon Hunter para os outros) ainda não, e nenhuma das duas foi compilada. Ascensão (modelo, acréscimo, legionários e efeitos), inimigos virados para o convidado e marcadores de caído já foram vistos funcionando no teste em um PC. A reentrada não foi testada. Próxima rodada: `tools\test-local.cmd` com os roteiros de `passivas-notas.md` e `inimigos-olhar-notas.md`; depois a partida pela Steam com um amigo (`teste-1.3.0.md`) e `tools\release.ps1`.
 
 ## Próximos itens
 
@@ -84,7 +89,8 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 | 1 | Reconexão transparente: o convidado espera o host voltar na mesma cena, sem recarregar (a reentrada da 1.4 recarrega a cena com a build guardada) | grande | `fase8-notas.md`, §5; `reentrada-notas.md` |
 | 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
 | — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
-| — | Skin de mod que só o parceiro tem; assets de outro personagem que não estão carregados (passivas viram marcador, efeitos não aparecem) | — | `ascensao-notas.md`, `passivas-notas.md` |
+| — | Skin de mod que só o parceiro tem; efeitos de ascensão de outro personagem que não estão carregados (as passivas agora carregam a árvore do dono) | — | `ascensao-notas.md`, `passivas-notas.md` |
+| — | Progresso da área do Demon Hunter (e de outros mini-jogos com barra) para os outros jogadores: hoje só a pedra/área aparece | pequeno | `passivas-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)
 

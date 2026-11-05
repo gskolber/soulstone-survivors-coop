@@ -52,12 +52,29 @@ Cada objeto vem de um `SkillTree*SO` aplicado ao jogador, e passa pelo próprio 
 
 No teste, o jogo do Legionnaire não tinha a pedra do Demon Hunter carregada (`No prefab for slot 0's DemonicBindingStone`): o prefab fica num componente do personagem, não nos SOs carregados para todos. Nesse caso aparece um marcador no lugar: um anel no chão e um feixe curto, na cor do dono (`GhostOverhead.ColorFor`), com o material das linhas do caído (`DownedMarkers.LineMaterial`). Também é só visual.
 
+## 1.4.1: a árvore do dono e o tamanho da área
+
+No teste da 1.4.0 a área da Demon Hunter continuava só um anel pequeno no jogo do Legionnaire. Dois ajustes:
+
+- **Prefab de verdade:** cada personagem tem a árvore de habilidades em `Resources` (`skill-tree-survivors-character/<char>-skill-tree/<char>-skill-tree-collection`, `<char>` = `CharacterName` do Hello em minúsculas). Os talentos dela referenciam os objetos do mini-jogo. Quando o prefab não é achado, o `Build` carrega a árvore do dono uma vez por personagem (`Resources.Load`, referência guardada na sessão) e procura de novo. Log: `Loaded <Char>'s skill tree (N assets) for slot N's objects`.
+- **Segundo teste da 1.4.1:** a árvore carregou (`Loaded DemonHunter's skill tree`), mas a pedra não veio: o jogo carrega os objetos de mini-jogo por caminho, todos em `Resources` `powers/` (`powers/demonicbinding/demonicbindingstone`, `powers/cursedshrine/...`, `powers/callofthewild/...`, `powers/ghostship/...`, `powers/machinespirit/...`; uns 26 assets). Agora, na primeira falta, o `Build` carrega `powers/` inteiro uma vez (`Loaded the mini-game prefabs ('powers/', N assets)`), e só depois a pasta da árvore do dono (`Resources.LoadAll` de `skill-tree-survivors-character/<char>-skill-tree`, com os talentos em subpastas). O clone continua sem scripts: se o efeito do círculo depende do script da pedra para crescer ou animar, ele aparece no estado inicial do prefab.
+- **Marcador no tamanho certo:** o dono mede a área do objeto (o maior collider: esfera, cápsula, caixa ou bounds; acima de 30 u é ignorado) e manda como `radius` no fim do `PassiveSpawn`. Leitores antigos param antes dele. Se o prefab ainda não aparecer, o marcador usa esse raio, com um segundo anel mais largo e fraco por dentro para ler como zona.
+
+## 1.4.1: estado das partes (genérico, todos os heróis)
+
+Terceiro teste: a pedra foi construída com o prefab de verdade (`Loaded the mini-game prefabs`, `built=1`), mas o círculo de runas não apareceu. O clone não roda scripts, e é o script da pedra que mostra e dimensiona o círculo (`DemonicBindingStone.CircleVfxTransform`, pelo raio `_demonicStoneRadius` do `DemonicBindingComponent`), além da barra de progresso (`ProgressBarRenderer`) e dos VFX de ativação/coleta.
+
+Em vez de tratar herói por herói, o dono manda o estado de cada parte do objeto: `PassiveParts = 147` com hash do caminho da parte (FNV-1a, sem `(Clone)`), `activeSelf` e `localScale`, só o que mudou a 5 Hz e tudo junto a cada 3 s com o `PassiveSpawn`. A cópia indexa as próprias partes pelo mesmo caminho e aplica. O que o script instancia em tempo de execução fora do prefab não tem par (conta como `unmatched`). Parâmetros de material e de VFX Graph (o preenchimento da barra) não vão: ficam para um item próprio.
+
+Log: `Layout (owner) '<nome>'` e `Layout (copy) '<nome>'` (partes, ligado/desligado, escala; até duas vezes por lado) e, na telemetria, `parts sent=N recv=N applied=N unmatched=N`.
+
 ## Como testar
 
 1. A joga de Legionnaire. Na tela de B aparecem os legionários caídos no mesmo lugar.
 2. B passa por cima deles e nada acontece. A resgata, e eles somem na tela de B.
-3. Repita com o Demon Hunter (a pedra) ou outro personagem com mini-jogo.
+3. Repita com o Demon Hunter (a pedra) ou outro personagem com mini-jogo. Na 1.4.1 a pedra deve aparecer com o modelo do jogo; se não, um anel do tamanho da área.
 4. **Logs:**
    - de A: `[passives] Own <Tipo> #N '...'`;
    - de B: na telemetria `[passives] ... built=N missing=0`;
    - um `No prefab for ...` indica um tipo cujo prefab não está carregado no outro jogo.
+   - 1.4.1: `Loaded <Char>'s skill tree for slot N's objects` no jogo de quem vê, e depois `built=N` em vez de `missing`.
