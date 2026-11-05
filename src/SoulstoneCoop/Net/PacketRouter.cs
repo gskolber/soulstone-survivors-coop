@@ -53,13 +53,19 @@ public enum PacketType : byte
     PauseOverride = 104, // host -> clients: mask u8 of the players whose pause the host lifted (Esc closed on the host, or F4) (ReliableOrdered)
     // 125-129: issue #7, party panel (docs/issue7-notas.md)
     PartyStatus = 125, // either way: sender's level u16 | xp progress u8 (/255) | death guards u8, on change at <= 4 Hz + every 2 s (ReliableOrdered)
-    // 130-139: chests and ore for every player (docs/baus-notas.md)
+    // 130-139: chests, ore and map task markers for every player (docs/baus-notas.md, docs/tarefas-mapa-notas.md)
     RewardSpawn = 130,    // host -> clients: a chest/ore is up: id u16 | prefab name, address, task address (str) | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
     RewardDespawn = 131,  // host -> clients: that chest is gone: id u16 | opened u8 (ReliableOrdered, after the opening's LootDrop)
     RewardStates = 132,   // host -> clients: count u8 | count * (id u16, progress f32, players u8, speed f32), ~10 Hz while in use (Sequenced)
     RewardPresence = 133, // client -> host: the client's player stands on (1) / left (0) chest id u16 (ReliableOrdered)
+    TaskObjective = 135,    // host -> clients: running map tasks' objectives: count u8 | count * (id u16 | kind u8 | objectiveId str | total f32 | current f32 | flags u8), 2 Hz (ReliableOrdered)
+    TaskTriggerSpawn = 134, // host -> clients: a map task's start marker is up: id u16 (shared with chests) | marker name, task address (str) | difficulty u8 | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
     // 140-149: partners' skills, what the cast doesn't carry (docs/proximos-investigacao.md)
     SkillChannelAim = 140, // either way: an open channel's aim: key str | flags u8 (1 front, 2 ground) | [front v3] [ground v3], ~10 Hz (Sequenced)
+    ModelState = 142,      // either way: the sender's active character models (ascension...): count u8 | count * (name str | path str | scale f32) | rootScale f32, on change + every 3 s (ReliableOrdered)
+    PassiveSpawn = 143,    // either way: one of the sender's passive / mini-game objects is up: id u16 | type u8 | name str | pos 3f | yaw f32 | scale f32 (ReliableOrdered, resent every 3 s)
+    PassiveDespawn = 144,  // either way: that object is gone: id u16 (ReliableOrdered)
+    PassiveStates = 145,   // either way: count u8 | count * (id u16 | pos 3f | yaw f32), only what moved, ~10 Hz (Sequenced)
     SkillAlwaysOn = 141,   // either way: the sender's always-on skills (rotating shields): count u8 | count * (key, type, level, extra, speed, cooldown, scale), on change + every 3 s (ReliableOrdered)
 }
 
@@ -80,6 +86,8 @@ public static class PacketRouter
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
         PacketType.SkillChannelAim => DeliveryMethod.Sequenced, // only the latest aim matters
         PacketType.SkillAlwaysOn => DeliveryMethod.ReliableOrdered,
+        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn => DeliveryMethod.ReliableOrdered,
+        PacketType.PassiveStates => DeliveryMethod.Sequenced,
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
         PacketType.SummonStates => DeliveryMethod.Sequenced,
         // Positions go in the host's PlayersState (one packet per tick); damage, ClientState, requests: host only.
@@ -217,6 +225,21 @@ public static class PacketRouter
             case PacketType.SkillAlwaysOn:
                 Skills.AlwaysOnSync.OnPacket(reader);
                 break;
+            case PacketType.ModelState:
+                AscensionSync.OnPacket(reader);
+                break;
+            case PacketType.PassiveSpawn:
+                Summons.PassiveObjectSync.OnSpawn(reader);
+                break;
+            case PacketType.PassiveDespawn:
+                Summons.PassiveObjectSync.OnDespawn(reader);
+                break;
+            case PacketType.PassiveStates:
+                Summons.PassiveObjectSync.OnStates(reader);
+                break;
+            case PacketType.TaskObjective:
+                Loot.TaskObjectiveSync.OnPacket(reader);
+                break;
             case PacketType.LootDrop:
                 Loot.LootSync.OnLootDrop(reader);
                 break;
@@ -270,6 +293,9 @@ public static class PacketRouter
                 break;
             case PacketType.RewardPresence:
                 Loot.ChestSync.OnPresence(reader);
+                break;
+            case PacketType.TaskTriggerSpawn:
+                Loot.ChestSync.OnTaskSpawn(reader);
                 break;
             case PacketType.PauseState:
                 PauseSync.OnPauseStateReceived(reader);

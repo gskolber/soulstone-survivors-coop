@@ -54,6 +54,7 @@ public static class RemoteCaster
         public readonly Dictionary<string, bool> Channeling = new();
         public readonly Dictionary<string, AlwaysOnSpec> AlwaysOnWanted = new(); // that player's always-on skills (SkillAlwaysOn)
         public IntPtr AnimGhostPtr;
+        public int AnimModelVersion;
         public Animator[]? GhostAnimators;
     }
 
@@ -80,6 +81,48 @@ public static class RemoteCaster
     public static int OpenChannels { get { int n = 0; foreach (var c in Casters.Values) foreach (var on in c.Channeling.Values) if (on) n++; return n; } }
 
     internal static bool IsCaster(Entity? e) => e != null && CasterPtrs.Count > 0 && CasterPtrs.Contains(e.Pointer);
+
+    /// <summary>For the casting watchdog's report: every caster's copies, "slot:key".</summary>
+    internal static string DescribeCopies()
+    {
+        var parts = new List<string>();
+        foreach (var c in Casters.Values) foreach (var k in c.Copies.Keys) parts.Add($"{c.Slot}:{k}");
+        return string.Join(", ", parts);
+    }
+
+    // ---------------- safety net: no real unit may come out of a replica ----------------
+
+    internal static int ReplicaSummonsRemoved;
+    private static readonly List<Entity> ReplicaSummons = new();
+    private static readonly HashSet<string> LoggedReplicaSummons = new();
+
+    /// <summary>UnitUtil.SetupSummonStats with one of our casters as the summoner (SummonOwnerCapturePatch): a skill
+    /// copy brought a real unit into this world. It would fight here with its own damage (and an ascension's unit,
+    /// with a stand-in for an owner, broke the local player's casting). It goes back to the pool next frame.</summary>
+    internal static void OnReplicaSummon(Entity summoned)
+    {
+        if (summoned == null) return;
+        ReplicaSummons.Add(summoned);
+        string name = EnemyPrefabKeys.StripClone(summoned.gameObject.name);
+        if (LoggedReplicaSummons.Add(name))
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] A replayed skill summoned '{name}' here: removed (replicas are visual only; the partner's units come through SummonSync).");
+    }
+
+    private static void RemoveReplicaSummons()
+    {
+        if (ReplicaSummons.Count == 0) return;
+        foreach (var e in ReplicaSummons)
+        {
+            try
+            {
+                if (e == null || !e.gameObject.activeInHierarchy) continue;
+                e.Recycle();
+                ReplicaSummonsRemoved++;
+            }
+            catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Removing a replica's summon: {ex.Message}"); }
+        }
+        ReplicaSummons.Clear();
+    }
     internal static bool IsCasterStats(StatsComponent? s) => s != null && StatsPtrs.Count > 0 && StatsPtrs.Contains(s.Pointer);
 
     public static void EnsureHooked()
@@ -97,6 +140,8 @@ public static class RemoteCaster
     {
         // A new match: the casters and their copies from the previous scene are gone with it.
         ForgetAll();
+        CastSync.ClearSummonCache();
+        ReplicaSummons.Clear();
         _matchStarted = true;
     }
 
@@ -147,6 +192,8 @@ public static class RemoteCaster
         {
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] RemoteCaster.Tick: {ex}");
         }
+        try { RemoveReplicaSummons(); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] RemoveReplicaSummons: {ex.Message}"); }
         try { GlideAim(unscaledDeltaTime); }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] GlideAim: {ex.Message}"); }
         try { UpdateAlwaysOn(); }
@@ -463,6 +510,7 @@ public static class RemoteCaster
         }
         if (caster.FailedKeys.Contains(key) || caster.Entity == null) return null;
 
+        if ((skillType & SkillType.Summon) != 0) { RefuseSummon(caster, key, "Summon tag"); return null; }
         try
         {
             var inst = template != null ? CreateFromTemplate(caster, key, template, out string how) : CreateSkillInstance(caster, key, skillType, out how);
@@ -473,12 +521,27 @@ public static class RemoteCaster
             Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Copy '{key}' ({c.Kind}, type={skillType}, via {how}) set up on remote caster {caster.Slot}.");
             return c;
         }
+        catch (ReplicaRefused r)
+        {
+            RefuseSummon(caster, key, r.Message);
+            return null;
+        }
         catch (Exception ex)
         {
             caster.FailedKeys.Add(key);
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] Could not copy skill '{key}' on caster {caster.Slot} (won't retry this match): {ex}");
             return null;
         }
+    }
+
+    private sealed class ReplicaRefused : Exception { public ReplicaRefused(string why) : base(why) { } }
+
+    /// <summary>A partner's skill that brings units into the world is never copied (the sender skips them too; this
+    /// covers a sender that didn't).</summary>
+    private static void RefuseSummon(Caster caster, string key, string why)
+    {
+        caster.FailedKeys.Add(key);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] '{key}' is not replayed on caster {caster.Slot} ({why}): its units come through SummonSync.");
     }
 
     /// <summary>The skill the other player cast, straight from its prefab: "Skill-Prefabs/&lt;key&gt;" is the same asset on all
@@ -491,6 +554,7 @@ public static class RemoteCaster
     {
         var prefab = ResourcesUtil.Load<Skill>(SkillPrefabFolder + key);
         if (prefab == null) throw new Exception($"no skill prefab at Resources '{SkillPrefabFolder}{key}'");
+        if (CastSync.Summons(prefab)) throw new ReplicaRefused("it summons units");
         var inst = UnityEngine.Object.Instantiate(prefab, caster.Entity!.transform);
         if (inst == null) throw new Exception("Instantiate returned null");
         SetupOnCaster(caster.Entity, inst, skillType);
@@ -569,7 +633,8 @@ public static class RemoteCaster
         // Phase 9: a player far from us is off screen: its replica (visual only) would just cost effects. [Coop] ReplicaCastRadius.
         float radius = Plugin.ReplicaCastRadius?.Value ?? 0f;
         var me = GameState.LocalPlayerEntity;
-        if (radius > 0f && me != null && RemoteProxy.TryGetPosition(slot, out var at, out _)
+        // Not for a God cast (template): those fall around whichever player they aim at, maybe us.
+        if (radius > 0f && template == null && me != null && RemoteProxy.TryGetPosition(slot, out var at, out _)
             && (at - me.transform.position).sqrMagnitude > radius * radius) return PlayResult.Culled;
         var c = GetOrCreateCopy(caster, m.Key, (SkillType)m.SkillType, template);
         if (c == null) return PlayResult.NoSkill;
@@ -796,9 +861,10 @@ public static class RemoteCaster
             var who = CoopSession.Get(caster.Slot);
             var ghost = who?.Ghost;
             if (ghost == null) return;
-            if (caster.GhostAnimators == null || ghost.Pointer != caster.AnimGhostPtr)
+            if (caster.GhostAnimators == null || ghost.Pointer != caster.AnimGhostPtr || caster.AnimModelVersion != who!.ModelVersion)
             {
                 caster.AnimGhostPtr = ghost.Pointer;
+                caster.AnimModelVersion = who!.ModelVersion;
                 caster.GhostAnimators = ghost.GetComponentsInChildren<Animator>(true);
             }
             int hash = Animator.StringToHash(trait.AnimationName);

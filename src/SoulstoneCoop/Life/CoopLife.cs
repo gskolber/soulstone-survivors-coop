@@ -25,7 +25,9 @@ public static class CoopLife
 {
     public enum EndKind : byte { None = 0, Defeat = 1, Victory = 2, Surrender = 3, PortalHome = 4 }
 
-    private const float ReviveRadius = 2.5f;
+    /// <summary>How close a living ally has to stand (flat distance) to revive. 1.3: 2.5 -> 3.5, and drawn on the ground
+    /// around every downed player (DownedMarkers), so the spot is easy to find and to stay in while dodging.</summary>
+    internal const float ReviveRadius = 3.5f;
     private const float ReviveTime = 3f;
     /// <summary>Revive bar lost per second with nobody next to the downed player, as a fraction of the time it takes to
     /// fill: 0.1 = a full bar takes 30 s to empty, so stepping away to dodge doesn't throw the progress away.</summary>
@@ -52,6 +54,7 @@ public static class CoopLife
     private static readonly float[] _progress = new float[Players.MaxSlots];
     private static readonly float[] _revivePendingTimer = new float[Players.MaxSlots]; // host: Revive sent, waiting for its ClientState
     private static float _allDownTimer;
+    private static readonly bool[] _downedNow = new bool[Players.MaxSlots];
     private static float _lifeTimer;
     private static int _lastSentDownMask = -1;
 
@@ -200,6 +203,7 @@ public static class CoopLife
             if (_pendingPortalTimer > 0f) RetryPendingPortal(dt);
             HostLostTick(dt);
             FeedbackTick(dt);
+            DownedMarkers.Tick(Connected && InMatch && !RunEnding);
             HandleHotkeys();
         }
         catch (Exception ex)
@@ -495,7 +499,8 @@ public static class CoopLife
 
         // Each downed player fills its bar while any living ally stands within the radius; away from all, it drains slowly
         // (ReviveDecayRate), so a reviver can step out to dodge and come back.
-        var downedNow = new bool[Players.MaxSlots];
+        var downedNow = _downedNow; // perf: one array for the whole session, not one per frame
+        Array.Clear(downedNow);
         foreach (var d in Run)
         {
             if (!d.Down) continue;

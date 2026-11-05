@@ -20,6 +20,11 @@ public static class ClientPuppets
     private const float ArriveDistance = 0.15f;  // u: closer than this = stand still, face the host's yaw
     private const float LeadSeconds = 0.1f;      // MoveToLocation aims slightly ahead; the agent smooths it
     private const float MaxExtrapolation = 0.25f;
+    // Facing (docs/inimigos-olhar-notas.md): close enemies look at the player they are fighting.
+    private const float FaceMeleeRange = 6f;     // u: always face the nearest living player this close
+    private const float FaceRangedRange = 14f;   // u: ...and this far while (nearly) standing still
+    private const float FaceStillSpeed = 1.5f;   // u/s
+    private const float FaceCheckInterval = 0.2f;
     private const float TelemetryInterval = 5f;
 
     public sealed class Puppet
@@ -40,6 +45,13 @@ public static class ClientPuppets
         public float Yaw;
         public float HealthPercent = 1f;
         public bool HealthDirty = true;
+
+        // Facing: the player transform this puppet looks at (Zero: none, the host's yaw / its own movement).
+        public IntPtr LookPtr;
+        public RotationMode OrigRotationMode;
+        public bool HasOrigRotationMode;
+        public float FaceCheckAt;
+        public bool IsEnemy, IsEnemyKnown;
 
         public bool Dead;        // host said Died; playing the local death, local dissolve recycles it
         public bool Despawning;  // we called Recycle ourselves
@@ -281,7 +293,10 @@ public static class ClientPuppets
         bool paused = Time.timeScale < 0.0001f;
         float now = Time.unscaledTime;
 
-        foreach (var p in ByNetId.Values.ToArray())
+        // Perf: one reusable list instead of a new array every frame (RemoveTracking edits ByNetId inside the loop).
+        TickList.Clear();
+        TickList.AddRange(ByNetId.Values);
+        foreach (var p in TickList)
         {
             try
             {
@@ -373,6 +388,7 @@ public static class ClientPuppets
             return;
         }
 
+        UpdateFacing(p, ch, actual, vel, now);
         if (Horizontal(target - actual) > ArriveDistance)
         {
             if (p.UsePathFollowing) ch.MoveToLocation(target);
@@ -381,8 +397,71 @@ public static class ClientPuppets
         else
         {
             if (p.UsePathFollowing) ch.StopMovement();
+            if (p.LookPtr != IntPtr.Zero) return; // looking at its player (UpdateFacing)
             float rad = p.Yaw * Mathf.Deg2Rad;
             ch.RotateTowards(new Vector3(Mathf.Sin(rad), 0f, Mathf.Cos(rad)), true, true);
+        }
+    }
+
+    private static readonly List<Transform> FaceCandidates = new();
+    private static readonly List<Puppet> TickList = new();
+    private static int _faceFrame = -1;
+    private static int _faceErrors;
+
+    /// <summary>The players an enemy here could be fighting: us and every ghost, while up (once per frame).</summary>
+    private static List<Transform> LivingPlayerTransforms()
+    {
+        if (_faceFrame == Time.frameCount) return FaceCandidates;
+        _faceFrame = Time.frameCount;
+        FaceCandidates.Clear();
+        var local = GameState.LocalPlayerEntity;
+        if (local != null && !Life.CoopLife.LocalOut) FaceCandidates.Add(local.transform);
+        foreach (var r in Lobby.CoopSession.Remotes)
+        {
+            if (r.Ghost == null || !r.InRun || Life.CoopLife.IsRemoteDown(r.Slot)) continue;
+            FaceCandidates.Add(r.Ghost.transform);
+        }
+        return FaceCandidates;
+    }
+
+    /// <summary>The host's enemies turn with their movement (BasicAIComponent sets OrientToMovement) and the snapshot
+    /// only carries their yaw, which here lags behind where the player really is, and the puppet's own small corrections
+    /// turn it sideways. Close to a living player (any distance while it stands and shoots), the puppet looks at that
+    /// player with the game's own LookTowardsTarget rotation (ModifiedCharacter rotates it smoothly); farther away or on
+    /// the move, it goes back to its own rotation mode.</summary>
+    private static void UpdateFacing(Puppet p, ModifiedCharacter ch, Vector3 at, Vector3 vel, float now)
+    {
+        if (now < p.FaceCheckAt) return;
+        p.FaceCheckAt = now + FaceCheckInterval;
+        try
+        {
+            if (!p.IsEnemyKnown) { p.IsEnemy = ClientSpawnBlock.IsEnemyTeam(p.Entity); p.IsEnemyKnown = true; }
+            Transform? best = null;
+            if (p.IsEnemy)
+            {
+                float still = Horizontal(vel) < FaceStillSpeed ? FaceRangedRange : FaceMeleeRange;
+                float bestD = still * still;
+                foreach (var t in LivingPlayerTransforms())
+                {
+                    if (t == null) continue;
+                    var d = t.position - at;
+                    d.y = 0f;
+                    float sq = d.sqrMagnitude;
+                    if (sq < bestD) { bestD = sq; best = t; }
+                }
+            }
+            var want = best != null ? best.Pointer : IntPtr.Zero;
+            if (want == p.LookPtr && p.HasOrigRotationMode) return;
+            // First look at this puppet: remember its own mode (a pooled instance may still carry our LookTowardsTarget).
+            if (!p.HasOrigRotationMode) { p.OrigRotationMode = ch.GetRotationMode(); p.HasOrigRotationMode = true; }
+            if (best != null) ch.SetRotationMode(RotationMode.LookTowardsTarget, best);
+            else ch.SetRotationMode(p.OrigRotationMode == RotationMode.LookTowardsTarget ? RotationMode.OrientToMovement : p.OrigRotationMode, null!);
+            p.LookPtr = want;
+        }
+        catch (Exception ex)
+        {
+            p.FaceCheckAt = now + 5f;
+            if (_faceErrors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][puppets] Facing #{p.NetId}: {ex.Message}");
         }
     }
 

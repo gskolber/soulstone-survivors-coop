@@ -42,17 +42,28 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | #7 | Painel do grupo no HUD: vida, nível, XP, revives e estado de cada parceiro (`issue7-notas.md`) | `f16b5fa`, `3df1ac2` |
 | #5 | Painel de upgrade fora do HUD, centrado nas cartas, com controle completo (`issue5-notas.md`) | `a961ab8` |
 | #6, #3 | Convidado acha inimigos fora das próprias listas de tier; maldições (afixos) vêm do host (`issue6-notas.md`) | `0ff2f28`, `97e8f72` |
-| **1.2.0** | Tudo abaixo junto; testado com duas janelas (`tools\test-local.cmd`) | — |
+| **1.2.0** | Tudo abaixo junto; testado com duas janelas (`tools\test-local.cmd`); nunca publicada sozinha (entra na 1.3.0) | `95e39f0` |
 | Baús | Baús e minérios para todos: espelho no convidado, proxy abre, mais rápido com mais gente em cima (`baus-notas.md`) | — |
 | Reviver | Barra de reviver cai devagar longe do caído; log do host a cada 2 s enquanto alguém está caído | — |
 | 4C, mira | Mira contínua do channeling do parceiro (`canal-mira-notas.md`) | — |
 | 4D, comuns | Ataque animado dos inimigos comuns no convidado (`inimigos-ataque-notas.md`) | — |
 | 4C, escudos | Escudos giratórios do parceiro (`sempre-ligadas-notas.md`) | — |
 | Ferramentas | `tools\test-local.cmd` (duas janelas conectadas no mesmo PC) e F3 (baú na frente do host) | — |
+| **1.3.0** | Tudo abaixo junto, com a 1.2.0 | — |
+| Tarefas | Marcadores de tarefa do mapa para todos; qualquer jogador começa a tarefa (`tarefas-mapa-notas.md`) | — |
+| Host caído | Inimigos parados em volta do corpo do host caído são reciclados; referência do spawn no plano (`host-caido-notas.md`) | — |
+| Ascensões | Invocações de ascensão (centurião do Legionnaire, demônio do Demon Hunter) não são mais repetidas nos outros: travavam as magias deles; vigia que avisa no log quando o jogador local para de lançar (`invocacoes-ascensao-notas.md`) | — |
+| Olhar | Inimigos perto de um jogador olham para ele no convidado (`inimigos-olhar-notas.md`) | — |
+| Caído | Raio de reviver 3,5 u; anel no chão com o progresso e linhas até os aliados vivos (`caido-marcadores-notas.md`) | — |
+| Ascensão | Modelo de ascensão / transformação e escala do parceiro no fantasma (`ascensao-notas.md`) | — |
+| Passivas | Objetos das mecânicas de cada personagem visíveis para todos, sem interação (`passivas-notas.md`) | — |
+| Tarefas | Timer e contador da tarefa no painel do convidado (`tarefas-mapa-notas.md`) | — |
+| Perigos | Meteoros do deus se revezam entre os jogadores vivos (`perigos-notas.md`) | — |
+| Desempenho | Reciclador, snapshot, marionetes e vigia com menos trabalho por frame (`desempenho-notas.md`) | — |
 
 ## Agora
 
-A **1.2.0** está pronta (`PluginVersion` subido, notas em `releases/1.2.0.md`, README atualizado). Os itens dela foram testados com duas janelas no mesmo PC (`tools\test-local.cmd`). Antes de publicar com `tools\release.ps1`, falta uma partida pela Steam com um amigo (checklist em `teste-1.2.0.md`).
+A **1.3.0** está com commit (`PluginVersion` subido, notas em `releases/1.3.0.md`, README atualizado). Ela junta a 1.2.0, testada com duas janelas no mesmo PC (`tools\test-local.cmd`), e o que ainda precisa desse teste: tarefas do mapa, host caído, invocações de ascensão, olhar dos inimigos, marcadores do caído, ascensão no fantasma, passivas, objetivos de tarefa, meteoros e a passada de desempenho (roteiros nas notas de cada um). Antes de publicar com `tools\release.ps1`, falta uma partida pela Steam com um amigo (checklist em `teste-1.3.0.md`).
 
 ## Próximos itens
 
@@ -61,11 +72,9 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 | # | Item | Esforço | Origem |
 |---|---|---|---|
 | 1 | Reconexão completa no meio da run, mantendo nível, skills e itens (hoje a reentrada experimental entra como personagem novo). O jogo já salva e devolve isso entre fases do Endless (`GameModeBaseData`) | médio a grande | `fase8-notas.md`, §5 |
-| 2 | `MapTask` que qualquer jogador pode começar: o gatilho de início é um `InteractableTriggerObject`, como o dos baús (`ChestSync` serve de modelo) | pequeno a médio | `baus-notas.md` |
-| 3 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
+| 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
 | — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
-| — | Host morto com cliente vivo: rever proxy e spawn | — | `fase3-notas.md` |
-| — | Skin de mod do parceiro vira a skin padrão; modelo de transformação (Ascension) e companheiros visuais da arma não aparecem no fantasma | — | `fase5-notas.md` |
+| — | Skin de mod do parceiro vira a skin padrão; companheiros visuais da arma não aparecem no fantasma; efeitos de ativação da ascensão (VFX, luz) não vão para os outros | — | `fase5-notas.md`, `ascensao-notas.md` |
 | — | Voz de "abrindo baú" do personagem do convidado não toca | — | `baus-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)

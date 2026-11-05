@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.2.** Played by two people over Steam, including chests and ore for every player; 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.3.** Played by two people over Steam (the 1.2 features); the 1.3 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
@@ -39,14 +39,15 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Connection | Steam invite (P2P through Steam's relay, no port forwarding), invite code, direct IP; mod version check |
 | Lobby | Co-op tab in the menu; the host starts the run and the guest follows on the same map, mode, difficulty and curses |
 | Players | Up to 8 (1 host + 7 guests); the host relays each player to the others |
-| Partners | Shown with their own character, skin and weapon, Steam name, health bar, ally ring and minimap marker; smooth movement, dash and animations; their pets and summons (e.g. the Sentinel's panther) and rotating shields are visible |
-| Enemies | The host owns the world; the guest sees the same enemies, bosses, void hunters and specials, including boss area warnings; regular enemies animate their attacks on the guest too |
+| Partners | Shown with their own character, skin and weapon, Steam name, health bar, ally ring and minimap marker; smooth movement, dash and animations; their pets and summons (e.g. the Sentinel's panther), rotating shields, ascended / transformed look and their character's passive objects (fallen legionnaires, demonic stones, shards, shrines...) are visible, but only their owner can use those objects |
+| Enemies | The host owns the world; the guest sees the same enemies, bosses, void hunters and specials, including boss area warnings; regular enemies animate their attacks on the guest too and turn to face the player they're fighting |
 | Combat | Both players damage the same enemies; enemies chase and hit whoever is closest; statuses (slow, stun) reach the guest |
 | Skills | Each player sees the other's skills (visual only; damage is synced separately), with channelled beams following their aim |
 | Progression | Team XP (whoever picks up an orb, both get it), loot and kill credit on the guest; each player keeps their own level and upgrades |
 | Chests and ore | Appear for everyone, and anyone can open them; each extra player standing on one opens it faster (`[Coop] ChestOpenBonusPerPlayer`); the loot goes to everyone |
+| Map tasks | The objective markers on the map appear for everyone, and any player can start them (faster with more players on the marker); everyone sees the task's timer or kill counter; the enemies and the reward are shared |
 | Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel at the top of the screen that you keep playing under (1-4 or the gamepad's D-pad to pick) |
-| Death | Downed state, any ally standing next to you revives you (stepping away to dodge only slowly drains the revive bar), defeat only when everyone is down; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
+| Death | Downed state, any ally standing next to you revives you: a ring on the ground shows the revive area and fills as you're revived, and a line ties each downed player to the nearest living ally (stepping away to dodge only slowly drains the revive bar); defeat only when everyone is down; with the host down, enemies keep coming to the players still standing; the God's meteors go after every living player, not only the host; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
 | End of run | Victory, Home portal, Endless and challenge portals and Restart happen for everyone; the host surrendering ends the run for all |
 | Disconnects | Host leaving ends everyone's run with a notice; a guest leaving (or surrendering) lets the others continue |
 | Language | The mod's own texts follow the game's language: English and Portuguese written by hand; Spanish, French, German, Russian, Chinese and Japanese machine-translated |
@@ -54,7 +55,6 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 ## Known limitations
 
 - Rejoining a run in progress keeps nothing (behind `[Coop] AllowRejoin`, off by default).
-- Only the host can start a map task (the objective markers on the map); its reward chest is then shared like any other.
 - XP earned while you are down is held and given when you are revived; if nobody revives you, it is lost.
 - Crusade mode is not supported in co-op.
 
@@ -63,7 +63,6 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 ## Roadmap
 
 - Full rejoin keeping level, skills and items.
-- Map tasks that any player can start.
 - Crusade mode.
 
 ## Settings

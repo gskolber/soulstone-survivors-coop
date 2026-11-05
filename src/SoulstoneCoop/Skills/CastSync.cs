@@ -124,6 +124,7 @@ public static class CastSync
             _localCasterPtr = caster != null ? caster.Pointer : IntPtr.Zero;
             _localPlayerPtr = local != null ? local.Pointer : IntPtr.Zero;
             PollChannels(unscaledDeltaTime);
+            Watchdog();
         }
         catch (Exception ex)
         {
@@ -170,8 +171,15 @@ public static class CastSync
 
         string key = KeyOf(skill);
         var type = skill.SkillType;
-        // A summon would be a real Entity on the other side, dealing its own damage: not replicated.
-        if ((type & SkillType.Summon) != 0) { _skippedSummon++; return; }
+        // A summon would be a real Entity on the other side, dealing its own damage: not replicated. Not only the
+        // Summon-tagged skills: the ascensions' summons (Legionnaire's centurions, Demon Hunter's demons, Apocalypse
+        // knights) are set up from power-up data without that tag, and replaying them broke the others' casting.
+        if (Summons(skill))
+        {
+            _skippedSummon++;
+            if (LoggedSummonKeys.Add(key)) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] '{key}' summons units (type={type}): not sent, the partners see the units through SummonSync.");
+            return;
+        }
 
         var m = new CastMessage { Key = key, SkillType = (int)type, Yaw = local.transform.eulerAngles.y };
         m.Level = (byte)Mathf.Clamp(skill.SkillLevel, 0, 255);
@@ -305,6 +313,98 @@ public static class CastSync
 
     private static byte ClampByte(int v) => (byte)Mathf.Clamp(v, 0, 255);
 
+    // ---------------- summons: never replayed ----------------
+
+    private static readonly HashSet<string> LoggedSummonKeys = new();
+    private static readonly Dictionary<IntPtr, bool> SummonCache = new();
+
+    /// <summary>A new match (RemoteCaster.OnMatchStarted): pointers of the old scene's skills may be reused.</summary>
+    internal static void ClearSummonCache() => SummonCache.Clear();
+
+    /// <summary>Does this skill (an instance or a prefab) bring units into the world: the Summon tag, or any
+    /// SummonEntity*Effect under it. Cached per object (skill instances and prefabs live for the whole match).</summary>
+    internal static bool Summons(Skill? skill)
+    {
+        if (skill == null) return false;
+        if ((skill.SkillType & SkillType.Summon) != 0) return true;
+        var ptr = skill.Pointer;
+        if (SummonCache.TryGetValue(ptr, out bool cached)) return cached;
+        bool found = false;
+        try
+        {
+            foreach (var c in skill.GetComponentsInChildren<Component>(true))
+            {
+                if (c == null) continue;
+                if (c.TryCast<SummonEntityEffect>() != null || c.TryCast<SummonEntityPositionalEffect>() != null
+                    || c.TryCast<SummonEntityAndForgetPositionalEffect>() != null) { found = true; break; }
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Checking '{skill.gameObject.name}' for summons: {ex.Message}"); }
+        SummonCache[ptr] = found;
+        return found;
+    }
+
+    // ---------------- watchdog: the local player stopped casting ----------------
+
+    private const float StallSeconds = 12f;
+    private const float StallReportInterval = 60f;
+    private static float _lastLocalCast = -1f, _stallReportAt, _watchdogTimer;
+    private static int _stalls;
+
+    internal static void NoteLocalCast() => _lastLocalCast = Time.time;
+
+    /// <summary>In a co-op run, alive, not paused, auto-cast on and enemies around, but no cast of ours for
+    /// StallSeconds of game time: the "can't attack any more" state (the ascension summons report). Logs what
+    /// could be in the way, and turns off any other player auto-cast that was never set up (its UpdateAll would throw
+    /// for every frame, which stops the loop that also runs ours).</summary>
+    private static void Watchdog()
+    {
+        // Perf: once a second is plenty (the cast time itself comes from the capture patch).
+        _watchdogTimer += Time.unscaledDeltaTime;
+        if (_watchdogTimer < 1f) return;
+        _watchdogTimer = 0f;
+        if (!NetworkManager.HasPeer || !GameManagerUtil.HasGameManager || !Lobby.CoopSession.LocalInRun || Time.timeScale <= 0f) { _lastLocalCast = -1f; return; }
+        var local = GameState.LocalPlayerEntity;
+        var auto = local != null ? local._playerSkillAutoCast : null;
+        if (local == null || auto == null || auto.ForceStopAutoCasting || Life.CoopLife.LocalOut) { _lastLocalCast = Time.time; return; }
+        if (_lastLocalCast < 0f || Time.time < _lastLocalCast) { _lastLocalCast = Time.time; return; }
+        float idle = Time.time - _lastLocalCast;
+        if (idle < StallSeconds || Time.unscaledTime < _stallReportAt) return;
+
+        int near = 0;
+        var all = EntityRegistry.AllEntities;
+        var at = local.transform.position;
+        if (all != null)
+            for (int i = 0; i < all.Count; i++)
+            {
+                var e = all[i];
+                if (e != null && ClientSpawnBlock.IsEnemyTeam(e) && (e.transform.position - at).sqrMagnitude < 15f * 15f) near++;
+            }
+        if (near == 0) return; // nothing to hit: not casting is normal
+        _stallReportAt = Time.unscaledTime + StallReportInterval;
+        _stalls++;
+
+        var autos = new List<string>();
+        int healed = 0;
+        try
+        {
+            foreach (var a in UnityEngine.Object.FindObjectsOfType<PlayerSkillAutoCastComponent>())
+            {
+                if (a == null) continue;
+                var owner = a._casterEntity;
+                bool mine = a.Pointer == auto.Pointer;
+                autos.Add($"{a.gameObject.name}{(mine ? "(ours)" : owner == null ? "(NOT SET UP)" : $"(of {owner.gameObject.name})")}");
+                if (!mine && owner == null && a.enabled) { a.enabled = false; healed++; }
+            }
+        }
+        catch (Exception ex) { autos.Add("scan failed: " + ex.Message); }
+        Plugin.StaticLog.LogWarning(
+            $"[SoulstoneCoop][casts] Local player has not cast for {idle:F0} s with {near} enemies within 15 u (stall #{_stalls}). " +
+            $"autoCasts=[{string.Join(", ", autos)}]{(healed > 0 ? $" - {healed} never-set-up auto-cast(s) turned off" : "")}; " +
+            $"remote casters={RemoteCaster.Active} copies=[{RemoteCaster.DescribeCopies()}] replicaSummonsRemoved={RemoteCaster.ReplicaSummonsRemoved}. " +
+            "Please send this log.");
+    }
+
     // ---------------- receiver ----------------
 
     public static void OnSkillCast(NetDataReader reader)
@@ -354,6 +454,7 @@ public static class LocalCastCapturePatch
         try
         {
             if (!__result || __instance == null || !CastSync.IsLocalCaster(__instance)) return;
+            CastSync.NoteLocalCast();
             CastSync.OnLocalCast(skill, parameters);
         }
         catch (Exception ex)

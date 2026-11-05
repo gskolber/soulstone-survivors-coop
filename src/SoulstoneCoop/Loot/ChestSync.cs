@@ -36,6 +36,15 @@ namespace SoulstoneCoop.Loot;
 ///     kept below InteractionTime), and its OnTriggerEnter/Exit only say whether our own player is inside;
 ///   - on RewardDespawn(opened) it plays the opening (ConsumeTrigger) and removes the copy.
 /// If a guest can't find the prefab, it still opens the chest by standing near the spot (FallbackRadius).
+///
+/// Map tasks (docs/tarefas-mapa-notas.md) go through the same machinery. A MapTask's start marker is an
+/// InteractableTriggerObject with the same InteractableOneTimeTrigger: MapTask.StartTaskAtPosition (0x45CDA0) puts it in
+/// _taskTriggerObjectInstance and sets Stage = Spawned; MapTask.UpdateAll (0x45D040) sees its ReadyToTrigger, consumes it
+/// and calls OnTriggerInteracted (Stage = Triggered, the task runs: timer, bosses or elites, all on the host). The host
+/// finds the markers by polling the MapTasks it has (MapTask.OnEnable/OnDisable patches; StartTaskAtPosition itself takes
+/// two structs by value, so it isn't patched) and sends TaskTriggerSpawn instead of RewardSpawn; despawn, states and
+/// presence are the chests' packets, with the same ids. The guest's copy comes from the task prefab's
+/// TaskTriggerObjectPrefab, with the task's minimap icon (MinimapIconType.TaskEasiest..TaskHardest by difficulty).
 /// Every game patch is made by hand, each in its own try/catch (ApplyPatches): a target that changed in a game update
 /// only turns this feature off.
 /// </summary>
@@ -74,14 +83,16 @@ public static class ChestSync
         _telemetryTimer += dt;
         if (_telemetryTimer < TelemetryInterval) return;
         _telemetryTimer = 0f;
-        if (Tracked.Count + Mirrors.Count + _spawnsSent + _spawnsRecv + _presenceRecv + _presenceSent + _errors == 0) return;
+        if (Tracked.Count + Mirrors.Count + _spawnsSent + _spawnsRecv + _presenceRecv + _presenceSent + _errors + _tasksSpawned == 0) return;
         Plugin.StaticLog.LogInfo(
             $"[SoulstoneCoop][chests] {NetworkManager.Role}: tracked={Tracked.Count} spawnsSent={_spawnsSent} despawnsSent={_despawnsSent} " +
-            $"statesSent={_statesSent} presenceRecv={_presenceRecv} proxyDriven={_proxyDriven} boostedFrames={_boostedFrames} | " +
+            $"statesSent={_statesSent} presenceRecv={_presenceRecv} proxyDriven={_proxyDriven} boostedFrames={_boostedFrames} " +
+            $"tasks={KnownTasks.Count} taskMarkers={_tasksSpawned} tasksStarted={_tasksStarted} | " +
             $"mirrors={Mirrors.Count} spawnsRecv={_spawnsRecv} built={_built} buildFailures={_buildFailures} fallbacks={_fallbacks} " +
             $"presenceSent={_presenceSent} opened={_opened} errors={_errors}");
         _spawnsSent = _despawnsSent = _statesSent = _presenceRecv = _boostedFrames = _proxyDriven = 0;
         _spawnsRecv = _built = _presenceSent = _opened = 0;
+        _tasksSpawned = _tasksStarted = 0;
     }
 
     private static void EnsureHooked()
@@ -101,7 +112,7 @@ public static class ChestSync
     internal static void OnLocalSceneGone()
     {
         Tracked.Clear();
-        TrackedByTrigger.Clear();
+        TrackedByTrigger.Clear(); // KnownTasks: the destroyed ones drop out of the poll by themselves
         ClearMirrors("local scene gone");
     }
 
@@ -122,10 +133,14 @@ public static class ChestSync
     private sealed class Chest
     {
         public ushort Id;
+        public bool IsTask;          // a map task's start marker (Task, TriggerObject), not a reward object
         public InteractableRewardObject? Reward;
+        public MapTask? Task;
+        public InteractableTriggerObject? TriggerObject;
         public InteractableOneTimeTrigger? Trigger;
-        public IntPtr RewardPtr, TriggerPtr;
+        public IntPtr Key, TriggerObjectPtr, TriggerPtr; // Key: the reward object, or the MapTask
         public string Name = "", MetaAddress = "", TaskAddress = "";
+        public int Difficulty;       // tasks: MapTaskDifficulty
         public int SetupFrame;
         public readonly HashSet<byte> Inside = new();
         public int PlayersOn;        // on it this frame (host + living guests inside)
@@ -133,9 +148,14 @@ public static class ChestSync
         public float RecentUntil;
     }
 
-    private static readonly Dictionary<IntPtr, Chest> Tracked = new();          // by reward object
+    private static readonly Dictionary<IntPtr, Chest> Tracked = new();          // by reward object / MapTask (Chest.Key)
     private static readonly Dictionary<IntPtr, Chest> TrackedByTrigger = new(); // by its InteractableOneTimeTrigger
+    private static readonly Dictionary<IntPtr, MapTask> KnownTasks = new();     // every enabled MapTask (host)
+
+    /// <summary>The host's MapTasks (TaskObjectiveSync reads their objectives).</summary>
+    internal static IEnumerable<MapTask> HostTasks => KnownTasks.Values;
     private static ushort _nextId = 1;
+    private static int _tasksSpawned, _tasksStarted;
 
     /// <summary>MapTask.CompleteTask is running: the reward it sets up comes from that task's prefab.</summary>
     internal static string CurrentTaskAddress = "";
@@ -165,8 +185,10 @@ public static class ChestSync
         {
             Id = NextId(),
             Reward = reward,
+            TriggerObject = reward.TriggerObject,
             Trigger = trigger,
-            RewardPtr = ptr,
+            Key = ptr,
+            TriggerObjectPtr = reward.TriggerObject!.Pointer,
             TriggerPtr = trigger.Pointer,
             Name = Enemies.EnemyPrefabKeys.StripClone(reward.gameObject.name),
             MetaAddress = meta,
@@ -193,7 +215,7 @@ public static class ChestSync
 
     private static void Forget(Chest c, bool opened, string why)
     {
-        Tracked.Remove(c.RewardPtr);
+        Tracked.Remove(c.Key);
         TrackedByTrigger.Remove(c.TriggerPtr);
         if (NetworkManager.HasPeer)
         {
@@ -204,8 +226,101 @@ public static class ChestSync
             NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
             _despawnsSent++;
         }
-        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Host: #{c.Id} '{c.Name}' {why}{(c.Inside.Count > 0 ? $" (guests on it: {c.Inside.Count})" : "")}.");
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Host: {(c.IsTask ? "task marker " : "")}#{c.Id} '{c.Name}' {why}{(c.Inside.Count > 0 ? $" (guests on it: {c.Inside.Count})" : "")}.");
     }
+
+    // ---------------- map task markers (host) ----------------
+
+    /// <summary>MapTask.OnEnable / OnDisable postfixes: the tasks the poll looks at.</summary>
+    internal static void HostTaskEnabled(MapTask task, bool enabled)
+    {
+        if (!CoopRole.IsHostSide || task == null) return;
+        if (enabled) KnownTasks[task.Pointer] = task;
+        else KnownTasks.Remove(task.Pointer); // its marker (if any) is dropped by the next poll
+    }
+
+    private static readonly List<IntPtr> DeadTasks = new();
+    private static readonly List<Chest> TaskScratch = new();
+
+    /// <summary>Every frame: a task with Stage Spawned and its marker up is tracked; the marker goes away when the task
+    /// starts (Stage Triggered: "opened"), is cancelled or the task is gone.</summary>
+    private static void HostPollTasks()
+    {
+        DeadTasks.Clear();
+        foreach (var kv in KnownTasks)
+        {
+            var task = kv.Value;
+            if (task == null) { DeadTasks.Add(kv.Key); continue; }
+            Tracked.TryGetValue(kv.Key, out var c);
+            InteractableTriggerObject? marker = null;
+            bool spawned = false;
+            try
+            {
+                spawned = task.Stage == MapTaskCompletionStage.Spawned;
+                marker = spawned ? task._taskTriggerObjectInstance : null;
+            }
+            catch { DeadTasks.Add(kv.Key); }
+            bool up = spawned && marker != null && marker.gameObject.activeInHierarchy && marker.OneTimeTrigger != null;
+            if (c != null)
+            {
+                if (up && c.TriggerObjectPtr == marker!.Pointer) continue;
+                MapTaskCompletionStage stage = MapTaskCompletionStage.None;
+                try { stage = task.Stage; } catch { }
+                bool started = stage == MapTaskCompletionStage.Triggered || stage == MapTaskCompletionStage.Completed;
+                if (started) _tasksStarted++;
+                Forget(c, opened: started, why: started ? "started" : $"gone (stage {stage})");
+            }
+            if (up) TrackTask(kv.Key, task, marker!);
+        }
+        foreach (var p in DeadTasks)
+        {
+            KnownTasks.Remove(p);
+            if (Tracked.TryGetValue(p, out var c)) Forget(c, opened: false, why: "task gone");
+        }
+        // A marker of a task that left KnownTasks (disabled) while it was up.
+        TaskScratch.Clear();
+        foreach (var c in Tracked.Values) if (c.IsTask && !KnownTasks.ContainsKey(c.Key)) TaskScratch.Add(c);
+        foreach (var c in TaskScratch) Forget(c, opened: false, why: "task disabled");
+    }
+
+    private static void TrackTask(IntPtr key, MapTask task, InteractableTriggerObject marker)
+    {
+        var trigger = marker.OneTimeTrigger!;
+        string address = "";
+        int difficulty = 0;
+        try
+        {
+            var meta = task.TaskMetadata;
+            if (meta != null) { address = meta.TaskAddress ?? ""; difficulty = (int)meta.Difficulty; }
+        }
+        catch { }
+        var c = new Chest
+        {
+            Id = NextId(),
+            IsTask = true,
+            Task = task,
+            TriggerObject = marker,
+            Trigger = trigger,
+            Key = key,
+            TriggerObjectPtr = marker.Pointer,
+            TriggerPtr = trigger.Pointer,
+            Name = Enemies.EnemyPrefabKeys.StripClone(marker.gameObject.name),
+            TaskAddress = address,
+            Difficulty = difficulty,
+            SetupFrame = Time.frameCount,
+            SetupTime = Time.unscaledTime,
+        };
+        Tracked[key] = c;
+        TrackedByTrigger[c.TriggerPtr] = c;
+        _tasksSpawned++;
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Host: task marker #{c.Id} '{c.Name}' ({Enemies.EnemyPrefabKeys.StripClone(task.gameObject.name)}, " +
+                                 $"difficulty {difficulty}, task '{address}') at {marker.transform.position}.");
+        if (NetworkManager.HasPeer) SendSpawn(c, Players.NoSlot);
+    }
+
+    /// <summary>The minimap icon MapTask.StartTaskAtPosition picks: Easy..Hardest -> TaskEasy..TaskHardest, else TaskEasiest.</summary>
+    private static MinimapIconType TaskIconType(int difficulty) =>
+        difficulty >= 2 && difficulty <= 5 ? (MinimapIconType)((int)MinimapIconType.TaskEasiest + difficulty - 1) : MinimapIconType.TaskEasiest;
 
     /// <summary>A player's match started next to ours (CoopSession.OnLobbyState): every chest still up, to that player.</summary>
     internal static void ResyncToPeer(byte slot)
@@ -221,20 +336,40 @@ public static class ChestSync
         if (n > 0) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Host: {n} chest(s) resent to slot {slot}.");
     }
 
-    private static bool IsUp(Chest c) => c.Reward != null && c.Trigger != null && c.Reward.gameObject.activeInHierarchy;
+    private static GameObject? Root(Chest c) => c.IsTask ? (c.TriggerObject != null ? c.TriggerObject.gameObject : null)
+                                                       : (c.Reward != null ? c.Reward.gameObject : null);
+
+    private static bool IsUp(Chest c)
+    {
+        var root = Root(c);
+        return root != null && c.Trigger != null && root.activeInHierarchy;
+    }
 
     private static void SendSpawn(Chest c, byte toSlot)
     {
-        if (c.Reward == null || c.Trigger == null) return;
-        var t = c.Reward.transform;
+        var root = Root(c);
+        if (root == null || c.Trigger == null) return;
+        var t = root.transform;
         var p = t.position;
         var q = t.rotation;
         var w = new NetDataWriter();
-        w.Put((byte)PacketType.RewardSpawn);
-        w.Put(c.Id);
-        w.Put(c.Name);
-        w.Put(c.MetaAddress);
-        w.Put(c.TaskAddress);
+        if (c.IsTask)
+        {
+            // TaskTriggerSpawn: id u16 | marker name, task address (str) | difficulty u8 | pos 3f | rot 4f | progress f32 | players u8
+            w.Put((byte)PacketType.TaskTriggerSpawn);
+            w.Put(c.Id);
+            w.Put(c.Name);
+            w.Put(c.TaskAddress);
+            w.Put((byte)Mathf.Clamp(c.Difficulty, 0, 255));
+        }
+        else
+        {
+            w.Put((byte)PacketType.RewardSpawn);
+            w.Put(c.Id);
+            w.Put(c.Name);
+            w.Put(c.MetaAddress);
+            w.Put(c.TaskAddress);
+        }
         w.Put(p.x); w.Put(p.y); w.Put(p.z);
         w.Put(q.x); w.Put(q.y); w.Put(q.z); w.Put(q.w);
         w.Put(c.Trigger.TimeInteracting);
@@ -323,13 +458,17 @@ public static class ChestSync
 
     private static void HostTick(float dt)
     {
+        if (KnownTasks.Count > 0) HostPollTasks();
         if (Tracked.Count == 0) return;
 
         // Safety net: a chest that vanished without RemoveRewardObject (scene objects destroyed, pool reset).
         Gone.Clear();
         float t0 = Time.unscaledTime;
         foreach (var c in Tracked.Values)
-            if (c.Reward == null || c.Trigger == null || (t0 - c.SetupTime > 2f && !c.Reward.gameObject.activeInHierarchy)) Gone.Add(c);
+        {
+            var root = Root(c);
+            if (root == null || c.Trigger == null || (t0 - c.SetupTime > 2f && !root.activeInHierarchy)) Gone.Add(c);
+        }
         foreach (var c in Gone) Forget(c, opened: false, why: "gone");
 
         if (!NetworkManager.HasPeer) return;
@@ -369,6 +508,8 @@ public static class ChestSync
     private sealed class Mirror
     {
         public ushort Id;
+        public bool IsTask;          // a map task's start marker
+        public int Difficulty;
         public string Name = "", MetaAddress = "", TaskAddress = "";
         public Vector3 Pos;
         public Quaternion Rot;
@@ -411,6 +552,28 @@ public static class ChestSync
         m = new Mirror { Id = id, Name = name, MetaAddress = meta, TaskAddress = task, Pos = pos, Rot = rot, Progress = time, PlayersOn = players };
         Mirrors[id] = m;
         if (CanBuildNow()) Build(m); // otherwise ClientTick builds it once our match is up
+    }
+
+    /// <summary>A map task's start marker is up on the host (same ids as the chests: despawn/states/presence are shared).</summary>
+    public static void OnTaskSpawn(NetDataReader r)
+    {
+        ushort id = r.GetUShort();
+        string name = r.GetString(), task = r.GetString();
+        int difficulty = r.GetByte();
+        var pos = new Vector3(r.GetFloat(), r.GetFloat(), r.GetFloat());
+        var rot = new Quaternion(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat());
+        float time = r.GetFloat();
+        int players = r.GetByte();
+        _spawnsRecv++;
+        if (NetworkManager.Role != NetRole.Client || PacketRouter.From != Players.HostSlot) return;
+        if (Mirrors.TryGetValue(id, out var m))
+        {
+            m.Progress = time; m.PlayersOn = players;
+            return;
+        }
+        m = new Mirror { Id = id, IsTask = true, Difficulty = difficulty, Name = name, TaskAddress = task, Pos = pos, Rot = rot, Progress = time, PlayersOn = players };
+        Mirrors[id] = m;
+        if (CanBuildNow()) Build(m);
     }
 
     public static void OnDespawn(NetDataReader r)
@@ -505,10 +668,12 @@ public static class ChestSync
             m.Failed = true;
             _buildFailures++;
             _fallbacks++;
-            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Client: no prefab for #{m.Id} '{m.Name}' (address '{m.MetaAddress}', task '{m.TaskAddress}'): " +
-                                        $"not shown, still opened by standing within {FallbackRadius} u of {m.Pos}.");
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Client: no prefab for {(m.IsTask ? "task marker " : "")}#{m.Id} '{m.Name}' (address '{m.MetaAddress}', task '{m.TaskAddress}'): " +
+                                        $"not shown, still {(m.IsTask ? "started" : "opened")} by standing within {FallbackRadius} u of {m.Pos}.");
+            if (m.IsTask) RequestMirrorIcon(m, null); // at least the marker on the minimap
             return;
         }
+        if (m.IsTask) { BuildTask(m, template); return; }
         try
         {
             var go = UnityEngine.Object.Instantiate(template, m.Pos, m.Rot);
@@ -550,6 +715,55 @@ public static class ChestSync
             m.TriggerPtr = IntPtr.Zero;
             Plugin.StaticLog.LogError($"[SoulstoneCoop][chests] Client: building #{m.Id} '{m.Name}': {ex}");
         }
+    }
+
+    /// <summary>A task marker's copy: the trigger object itself is the prefab's root (no reward object around it).</summary>
+    private static void BuildTask(Mirror m, GameObject template)
+    {
+        try
+        {
+            var go = UnityEngine.Object.Instantiate(template, m.Pos, m.Rot);
+            go.name = $"SoulstoneCoop_Task_{m.Id}_{m.Name}";
+            if (!go.activeSelf) go.SetActive(true);
+            m.Go = go;
+            var to = go.GetComponent<InteractableTriggerObject>() ?? go.GetComponentInChildren<InteractableTriggerObject>(true);
+            var trig = to != null ? to.OneTimeTrigger : null;
+            if (to == null || trig == null)
+            {
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Client: task marker '{m.Name}' has no trigger component: removed, started by distance.");
+                UnityEngine.Object.Destroy(go);
+                m.Go = null;
+                m.Failed = true;
+                _buildFailures++;
+                RequestMirrorIcon(m, null);
+                return;
+            }
+            m.TriggerObject = to;
+            m.Trigger = trig;
+            m.TriggerPtr = trig.Pointer;
+            MirrorByTrigger[m.TriggerPtr] = m;
+            to.Setup(); // what StartTaskAtPosition does to it: collider after DelayToEnable, visuals
+            RequestMirrorIcon(m, go.transform);
+            _built++;
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Client: task marker #{m.Id} '{m.Name}' (task '{m.TaskAddress}', difficulty {m.Difficulty}) shown at {m.Pos}.");
+        }
+        catch (Exception ex)
+        {
+            m.Failed = true;
+            _buildFailures++;
+            if (m.Go != null) UnityEngine.Object.Destroy(m.Go);
+            m.Go = null; m.TriggerObject = null; m.Trigger = null;
+            if (m.TriggerPtr != IntPtr.Zero) MirrorByTrigger.Remove(m.TriggerPtr);
+            m.TriggerPtr = IntPtr.Zero;
+            Plugin.StaticLog.LogError($"[SoulstoneCoop][chests] Client: building task marker #{m.Id} '{m.Name}': {ex}");
+        }
+    }
+
+    private static void RequestMirrorIcon(Mirror m, Transform? follow)
+    {
+        if (m.IconId >= 0) return;
+        try { m.IconId = MinimapManager.RequestIcon(TaskIconType(m.Difficulty), follow, m.Pos); }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Client: minimap icon for task marker #{m.Id}: {ex.Message}"); }
     }
 
     private static void Dispose(Mirror m, bool opened)
@@ -634,25 +848,35 @@ public static class ChestSync
 
     private static GameObject? ResolveTemplate(Mirror m)
     {
-        string key = $"{m.Name}|{m.MetaAddress}|{m.TaskAddress}";
+        string key = $"{(m.IsTask ? "task" : "reward")}|{m.Name}|{m.MetaAddress}|{m.TaskAddress}";
         if (TemplateCache.TryGetValue(key, out var cached) && cached != null) return cached;
         GameObject? found = null;
         string via = "";
         try
         {
-            if (m.MetaAddress.Length > 0)
+            if (m.IsTask)
+            {
+                // MapTask.TaskTriggerObjectPrefab, a direct reference on the task's prefab.
+                if (m.TaskAddress.Length > 0)
+                {
+                    found = ResourcesUtil.Load<MapTask>(m.TaskAddress)?.TaskTriggerObjectPrefab?.gameObject;
+                    via = "task prefab";
+                }
+                if (found == null) { found = FindLoadedTriggerAsset(m.Name); via = "loaded asset"; }
+            }
+            else if (m.MetaAddress.Length > 0)
             {
                 found = ResourcesUtil.Load<InteractableRewardObject>(m.MetaAddress)?.gameObject;
                 via = "address";
             }
-            if (found == null && m.TaskAddress.Length > 0)
+            if (found == null && !m.IsTask && m.TaskAddress.Length > 0)
             {
                 // A MapTask's reward is a direct reference on the task's prefab (MapTask.RewardTriggerObjectPrefab).
                 found = ResourcesUtil.Load<MapTask>(m.TaskAddress)?.RewardTriggerObjectPrefab?.gameObject;
                 via = "task prefab";
             }
-            if (found == null) { found = FindLoadedRewardAsset(m.Name); via = "loaded asset"; }
-            if (found == null)
+            if (found == null && !m.IsTask) { found = FindLoadedRewardAsset(m.Name); via = "loaded asset"; }
+            if (found == null && !m.IsTask)
             {
                 string addr = FindAddressInMapCollections(m.Name);
                 if (addr.Length > 0) { found = ResourcesUtil.Load<InteractableRewardObject>(addr)?.gameObject; via = $"map collection '{addr}'"; }
@@ -672,6 +896,19 @@ public static class ChestSync
             var r = all[i]?.TryCast<InteractableRewardObject>();
             if (r == null || r.gameObject.scene.IsValid()) continue; // prefabs have no valid scene
             if (Enemies.EnemyPrefabKeys.StripClone(r.gameObject.name) == name) return r.gameObject;
+        }
+        return null;
+    }
+
+    private static GameObject? FindLoadedTriggerAsset(string name)
+    {
+        var all = Resources.FindObjectsOfTypeAll(Il2CppType.Of<InteractableTriggerObject>());
+        for (int i = 0; i < all.Length; i++)
+        {
+            var t = all[i]?.TryCast<InteractableTriggerObject>();
+            if (t == null || t.gameObject.scene.IsValid()) continue; // prefabs have no valid scene
+            if (t.transform.parent != null) continue;               // a chest's trigger, inside its reward prefab
+            if (Enemies.EnemyPrefabKeys.StripClone(t.gameObject.name) == name) return t.gameObject;
         }
         return null;
     }
@@ -733,6 +970,8 @@ public static class ChestSync
         Patch(typeof(InteractableOneTimeTrigger), nameof(InteractableOneTimeTrigger.OnTriggerEnter), 1, nameof(ChestPatches.TriggerEnterPrefix), null);
         Patch(typeof(InteractableOneTimeTrigger), nameof(InteractableOneTimeTrigger.OnTriggerExit), 1, nameof(ChestPatches.TriggerExitPrefix), null);
         Patch(typeof(MapTask), nameof(MapTask.CompleteTask), 0, nameof(ChestPatches.CompleteTaskPrefix), null, nameof(ChestPatches.CompleteTaskFinalizer));
+        Patch(typeof(MapTask), nameof(MapTask.OnEnable), 0, null, nameof(ChestPatches.TaskEnablePostfix));
+        Patch(typeof(MapTask), nameof(MapTask.OnDisable), 0, null, nameof(ChestPatches.TaskDisablePostfix));
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Patches: {ok} applied, {failed} failed.");
     }
 
@@ -827,5 +1066,17 @@ public static class ChestPatches
     {
         ChestSync.CurrentTaskAddress = "";
         return __exception;
+    }
+
+    public static void TaskEnablePostfix(MapTask __instance)
+    {
+        try { ChestSync.HostTaskEnabled(__instance, enabled: true); }
+        catch (Exception ex) { ChestSync.CountError(); Plugin.StaticLog.LogError($"[SoulstoneCoop] ChestPatches.TaskEnablePostfix: {ex}"); }
+    }
+
+    public static void TaskDisablePostfix(MapTask __instance)
+    {
+        try { ChestSync.HostTaskEnabled(__instance, enabled: false); }
+        catch (Exception ex) { ChestSync.CountError(); Plugin.StaticLog.LogError($"[SoulstoneCoop] ChestPatches.TaskDisablePostfix: {ex}"); }
     }
 }

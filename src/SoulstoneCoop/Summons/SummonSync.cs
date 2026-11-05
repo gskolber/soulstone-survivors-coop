@@ -676,6 +676,13 @@ public static class SummonOwnerCapturePatch
         try
         {
             if (summonedEntity == null || NetworkManager.Role == NetRole.None) return;
+            // A replayed (visual-only) skill must never put a real unit in this world: the partner's own units are
+            // shown here as SummonSync clones. Covers the stand-ins of both sides.
+            if (Skills.RemoteCaster.IsCaster(casterEntity) || Enemies.RemoteProxy.IsProxy(casterEntity))
+            {
+                Skills.RemoteCaster.OnReplicaSummon(summonedEntity);
+                return;
+            }
             SummonSync.OnSummonSetup(casterEntity, summonedEntity, originalSummonPrefab);
         }
         catch (Exception ex)

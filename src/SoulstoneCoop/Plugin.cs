@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.2.0";
+    public const string PluginVersion = "1.3.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -90,6 +90,10 @@ public class Plugin : BasePlugin
         catch (System.Exception ex) { Log.LogError($"Chest sync patches: {ex}"); }
         // Regular enemies' attack animations on the guests: by hand too.
         Enemies.EnemyAttackAnims.ApplyPatch(harmony);
+        // Each one patches by hand inside its own try/catch: a failure only turns that feature off.
+        AscensionSync.ApplyPatch(harmony);
+        Summons.PassiveObjectSync.ApplyPatches(harmony);
+        Enemies.HostHazards.ApplyPatches(harmony);
 
         // Patched by hand: its by-value struct parameter (EntityByEnemyPrefabData) is the kind of signature
         // Il2CppInterop trampolines can choke on, and a failure here must not take the other patches down.
