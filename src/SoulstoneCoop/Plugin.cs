@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.4.1";
+    public const string PluginVersion = "1.5.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -58,7 +58,7 @@ public class Plugin : BasePlugin
             "Client: when the host disconnects mid-run, end the run (surrender) a few seconds later instead of staying in an empty map.");
         SenderClock = Config.Bind("Coop", "SenderClock", false,
             "Experimental: place the partner and the enemies by the sender's clock instead of the arrival time (smoother with jitter).");
-        PowersProbe = Config.Bind("Debug", "PowersProbe", true,
+        PowersProbe = Config.Bind("Debug", "PowersProbe", false,
             "Diagnostic, log only: what your own hero spawns from the game's powers/ folder (mini-game objects), whether it comes from the pool, its parts and its material changes. Sends nothing.");
         // Phase 9 (docs/fase9-notas.md).
         MaxPlayers = Config.Bind("Coop", "MaxPlayers", 8, new BepInEx.Configuration.ConfigDescription(

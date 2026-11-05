@@ -68,9 +68,27 @@ Em vez de tratar herói por herói, o dono manda o estado de cada parte do objet
 
 Log: `Layout (owner) '<nome>'` e `Layout (copy) '<nome>'` (partes, ligado/desligado, escala; até duas vezes por lado) e, na telemetria, `parts sent=N recv=N applied=N unmatched=N`.
 
+## 1.5.0: espelhamento genérico (sem lista de tipos) e valores de material
+
+Arquivo `Summons/PassiveObjectSync.Generic.cs`. A sonda mostrou que a maioria dos objetos de mecânica (navio, timão, imediato, baú do Pirata; pira e chama da Xamã; linha e cristal do Machinist) é `Instantiate` direto na raiz da cena, e só alguns efeitos vêm do pool (névoa do navio).
+
+- **Dono (`ScanPowers`, 2 Hz, só com par conectado):** raízes de todas as cenas carregadas cujo nome (sem `(Clone)`) é um prefab de `powers/`, mais instâncias novas do pool (`ResourcesUtil.PrefabIdByInstanceId`) de um prefab de `powers/`. Raízes que não são de `powers/` ficam num conjunto por ponteiro (a varredura seguinte quase não custa). Viram `Owned` do tipo `255` (`PowersType`) com o nome do prefab, pelo mesmo `Track` dos patches de `Setup`; a cópia usa o prefab de `powers/` com esse nome. Pulados: o que um patch de `Setup` já rastreia, névoas de mundo (`WorldFog`: escureceriam a tela do outro; o `AscensionFx` já mostra a do navio), o que está sob um objeto nosso (`SoulstoneCoop_`) e um efeito que o `AscensionFx` acabou de tocar para um parceiro ali perto (`AscensionFx.WasReplayed`, 4 s, 6 u).
+- **Materiais (`PassiveMaterials = 148`):** por renderer do objeto (até 24), as propriedades número/faixa/cor cujo nome sugere animação (fill, dissolve, fade, progress, alpha, opacity, amount, cutoff, intensity, emission, tint, visib, reveal, color; até 12 por renderer), lidas 5×/s (bloco de propriedades primeiro, senão o material) e mandadas quando mudam, tudo a cada 3 s. Chave: hash do caminho do renderer + hash do nome da propriedade. A cópia resolve o nome no próprio shader e aplica com `MaterialPropertyBlock` (sem vazar material).
+- **Telemetria** (linha `[passives]` a cada 10 s): `scan found/foreign/fogsSkipped/roots`, `mats sent/recv/applied/unmatched`.
+- **Fora:** animações (imediato cavando, ritualistas dançando), cristais giratórios do Machinist (`TemporaryRotatingSkill`, item próprio).
+
+### Como testar (1.5.0)
+
+Em A, F2 em cada herói e use a mecânica; olhe em B:
+1. **Demon Hunter:** o círculo de runas e a barra enchendo ao capturar.
+2. **Machinist:** o mineral aparece e a barra de mineração anda.
+3. **Pirata:** o navio, o timão e o imediato; a barra de escavação do tesouro.
+4. **Xamã:** a pira e a chama.
+5. **Logs:** em A, `[passives] Own powers #N '<nome>'`; em B, `built=N` e `mats ... applied=N` com `unmatched` baixo. Nenhum objeto duplicado (uma cópia de cópia apareceria como `Own powers` em B).
+
 ## Sonda `powers/` (diagnóstico, só log)
 
-`Summons/PowersProbe.cs`, desligável com `[Debug] PowersProbe = false`. Não manda nada nem muda o jogo. Serve para desenhar o espelhamento genérico (qualquer coisa que o herói local gera a partir de `Resources` `powers/`) e as barras de progresso a partir de dados reais:
+`Summons/PowersProbe.cs`, ligada com `[Debug] PowersProbe = true` (desligada por padrão desde a 1.5.0). Não manda nada nem muda o jogo. Serve para desenhar o espelhamento genérico (qualquer coisa que o herói local gera a partir de `Resources` `powers/`) e as barras de progresso a partir de dados reais:
 
 - `[probe] powers/ prefabs (N): ...`: os prefabs de mini-jogo do jogo;
 - `[probe] Pooled instance of '<nome>' ... registered`: instância criada pelo pool (`ResourcesUtil.PrefabIdByInstanceId`, lido 1×/s quando cresce, objeto por `Resources.InstanceIDToObject`);

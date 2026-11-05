@@ -8,7 +8,7 @@ namespace SoulstoneCoop.Summons;
 /// <summary>
 /// 1.4.1 diagnostic, LOG ONLY (docs/passivas-notas.md, "Sonda powers/"): what our own hero spawns from Resources
 /// "powers/" (every hero's mini-game prefabs) and how, to design the generic mirroring (plan #2) and the progress bars
-/// (plan #1) from real data. Sends nothing, changes nothing in the game. Off with [Debug] PowersProbe = false.
+/// (plan #1) from real data. Sends nothing, changes nothing in the game. On with [Debug] PowersProbe = true (off by default since 1.5.0).
 ///
 /// - Pooled: ResourcesUtil.PrefabIdByInstanceId maps every pooled instance to its prefab. New entries whose prefab is
 ///   one of the powers/ prefabs are fetched (Resources.InstanceIDToObject) and watched: each activation logs the

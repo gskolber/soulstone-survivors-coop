@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.4.1.** Played by two people over Steam (the 1.2 features); the 1.3 and 1.4 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.5.** Played by two people over Steam (the 1.2 features); the 1.3, 1.4 and 1.5 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
@@ -39,7 +39,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Connection | Steam invite (P2P through Steam's relay, no port forwarding), invite code, direct IP; mod version check |
 | Lobby | Co-op tab in the menu; the host starts the run and the guest follows on the same map, mode, difficulty and curses |
 | Players | Up to 8 (1 host + 7 guests); the host relays each player to the others |
-| Partners | Shown with their own character, skin and weapon, Steam name, health bar, ally ring and minimap marker; smooth movement, dash and animations; their pets and summons (e.g. the Sentinel's panther), rotating shields, ascended / transformed look and their character's passive objects (fallen legionnaires, demonic stones, shards, shrines...) are visible, but only their owner can use those objects |
+| Partners | Shown with their own character, skin and weapon, Steam name, health bar, ally ring and minimap marker; smooth movement, dash and animations; their pets and summons (e.g. the Sentinel's panther), rotating shields, ascended / transformed look and their character's passive and mini-game objects (fallen legionnaires, demonic stones, shrines, the ghost ship, the ritual pyre, minerals...) are visible with their progress bars and fades, but only their owner can use those objects |
 | Enemies | The host owns the world; the guest sees the same enemies, bosses, void hunters and specials, including boss area warnings; regular enemies animate their attacks on the guest too and turn to face the player they're fighting |
 | Combat | Both players damage the same enemies; enemies chase and hit whoever is closest; statuses (slow, stun) reach the guest |
 | Skills | Each player sees the other's skills (visual only; damage is synced separately), with channelled beams following their aim |
@@ -58,7 +58,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 - XP earned while you are down is held and given when you are revived; if nobody revives you, it is lost.
 - Crusade mode is not supported in co-op.
 - A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
-- Another character's passive objects and ascension effects need that character's assets in your game; when they aren't loaded, the objects show as a colored marker and those effects are skipped.
+- Another character's ascension effects need that character's assets in your game; when they aren't loaded, those effects are skipped. Mini-game objects show without their animations (a digging first mate, dancing ritualists stay still), and the Machinist's rotating crystals don't show on partners yet.
 
 The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 

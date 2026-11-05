@@ -70,13 +70,17 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
 | Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
 | Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
-| **1.4.1** | Correções do teste da 1.4.0 (sem commit) | — |
+| **1.5.0** | Espelhamento genérico das mecânicas de todos os heróis (`passivas-notas.md`, "1.5.0") | — |
+| Passivas | Objetos de `Resources` `powers/` achados por varredura (raízes da cena + pool), tipo `255` com o nome do prefab; valores animados de material (`PassiveMaterials = 148`): barras, dissolves, fades | — |
+| **1.4.1** | Correções do teste da 1.4.0 (`fa31e86`, `abaf7bf`) | — |
 | Morte | Agente que anda mira ≥ 1 u à frente, sem `StopMovement`, `stoppingDistance` 0, sem freio e na velocidade medida do host; limiar de movimento 0,6 → 0,2 u/s (`inimigos-olhar-notas.md`) | — |
 | Olhar | Inimigo em movimento sempre vira para onde anda, mesmo depois de um ataque replicado ter trocado o modo de rotação; modo esperado reaplicado a cada checagem (`inimigos-olhar-notas.md`) | — |
 | Passivas | Estado das partes (ligado/escala) do objeto do dono aplicado na cópia, genérico para todos os heróis (`PassiveParts = 147`) (`passivas-notas.md`) | — |
 | Passivas | Prefabs de mini-jogo de `Resources` `powers/` e árvore de habilidades do dono carregados sob demanda para achar o prefab de verdade; marcador no tamanho da área real (raio enviado no `PassiveSpawn`) (`passivas-notas.md`) | — |
 
 ## Agora
+
+A **1.5.0** (espelhamento genérico) foi testada em um PC com Demon Hunter, Machinist, Pirata e Xamã (F2): objetos, partes e barras chegam ao outro jogador, sem erros. A sonda `[Debug] PowersProbe` vem desligada. Antes de publicar com `tools\release.ps1`: a partida pela Steam com um amigo (`teste-1.3.0.md` mais o roteiro 1.5.0 de `passivas-notas.md`).
 
 A **1.4.0** está com commit (`869a4fa`); a **1.4.1** (olhar dos inimigos em movimento e a área do Demon Hunter para os outros) ainda não, e nenhuma das duas foi compilada. Ascensão (modelo, acréscimo, legionários e efeitos), inimigos virados para o convidado e marcadores de caído já foram vistos funcionando no teste em um PC. A reentrada não foi testada. Próxima rodada: `tools\test-local.cmd` com os roteiros de `passivas-notas.md` e `inimigos-olhar-notas.md`; depois a partida pela Steam com um amigo (`teste-1.3.0.md`) e `tools\release.ps1`.
 

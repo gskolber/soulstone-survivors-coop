@@ -67,6 +67,7 @@ public enum PacketType : byte
     PassiveDespawn = 144,  // either way: that object is gone: id u16 (ReliableOrdered)
     PassiveStates = 145,   // either way: count u8 | count * (id u16 | pos 3f | yaw f32), only what moved, ~10 Hz (Sequenced)
     PassiveParts = 147,    // either way, 1.4.1: parts of one passive object: id u16 | count u8 | count * (path hash u32 | active u8 | localScale 3f), on change 5 Hz + full every 3 s (ReliableOrdered)
+    PassiveMaterials = 148, // either way, 1.5.0: animated shader values of one passive object: id u16 | count u8 | count * (renderer path hash u32 | property name hash u32 | color u8 | f32 or 4 f32), on change 5 Hz + full every 3 s (ReliableOrdered)
     AscensionFx = 146,     // either way: one effect of the sender's ascension / mechanic (VFX, sound, world light), see AscensionFx (ReliableUnordered)
     SkillAlwaysOn = 141,   // either way: the sender's always-on skills (rotating shields): count u8 | count * (key, type, level, extra, speed, cooldown, scale), on change + every 3 s (ReliableOrdered)
 }
@@ -88,7 +89,7 @@ public static class PacketRouter
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
         PacketType.SkillChannelAim => DeliveryMethod.Sequenced, // only the latest aim matters
         PacketType.SkillAlwaysOn => DeliveryMethod.ReliableOrdered,
-        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn or PacketType.PassiveParts => DeliveryMethod.ReliableOrdered,
+        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn or PacketType.PassiveParts or PacketType.PassiveMaterials => DeliveryMethod.ReliableOrdered,
         PacketType.PassiveStates => DeliveryMethod.Sequenced,
         PacketType.AscensionFx => DeliveryMethod.ReliableUnordered,
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
@@ -245,6 +246,9 @@ public static class PacketRouter
                 break;
             case PacketType.PassiveParts:
                 Summons.PassiveObjectSync.OnParts(reader);
+                break;
+            case PacketType.PassiveMaterials:
+                Summons.PassiveObjectSync.OnMaterials(reader);
                 break;
             case PacketType.TaskObjective:
                 Loot.TaskObjectiveSync.OnPacket(reader);

@@ -150,6 +150,30 @@ public static class AscensionFx
     private static readonly HashSet<string> LoggedMissing = new();
     private static readonly Dictionary<byte, WorldLightProcessor> Lights = new();
 
+    // 1.5.0: what we just replayed for a partner. These come out of the game's own pools as ordinary instances, so the
+    // generic passive scanner (PassiveObjectSync.Generic) asks here before taking one for an object of ours.
+    private static readonly List<(string Name, Vector3 Pos, float At)> RecentReplays = new();
+
+    private static void NoteReplay(string name, Vector3 pos)
+    {
+        int slash = name.LastIndexOf('/');
+        if (slash >= 0) name = name.Substring(slash + 1);
+        float now = Time.unscaledTime;
+        RecentReplays.RemoveAll(r => now - r.At > 4f);
+        RecentReplays.Add((name.ToLowerInvariant(), pos, now));
+    }
+
+    /// <summary>1.5.0: an effect of this name was replayed for a partner near here in the last 4 s.</summary>
+    internal static bool WasReplayed(string name, Vector3 pos)
+    {
+        if (RecentReplays.Count == 0) return false;
+        string n = name.ToLowerInvariant();
+        float now = Time.unscaledTime;
+        foreach (var r in RecentReplays)
+            if (now - r.At <= 4f && r.Name == n && (r.Pos - pos).sqrMagnitude < 36f) return true;
+        return false;
+    }
+
     public static void OnPacket(NetDataReader r)
     {
         byte kind = r.GetByte();
@@ -190,12 +214,14 @@ public static class AscensionFx
                 {
                     var vfx = ResolveVfx(name);
                     if (vfx == null) return;
+                    NoteReplay(vfx.gameObject.name, pos);
                     var e = SkillUtil.RunOneShotVfx(vfx, a, pos, rot, parent!);
                     if (e != null) { runner.StartCoroutine(e); _played++; }
                     break;
                 }
                 case KindVfxPath:
                 {
+                    NoteReplay(name, pos);
                     var e = SkillUtil.RunOneShotVfx(name, a, pos, rot, parent!);
                     if (e != null) { runner.StartCoroutine(e); _played++; }
                     break;
@@ -204,6 +230,7 @@ public static class AscensionFx
                 {
                     var vfx = ResolveVfx(name);
                     if (vfx == null) return;
+                    NoteReplay(vfx.gameObject.name, pos);
                     var e = SkillUtil.RunFireAndForgetVfxReference(vfx, a, b, c, pos, rot, scale, parent!, (flags & FlagDisable) != 0);
                     if (e != null) { runner.StartCoroutine(e); _played++; }
                     break;

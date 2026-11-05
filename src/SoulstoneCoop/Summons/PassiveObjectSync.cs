@@ -25,7 +25,7 @@ namespace SoulstoneCoop.Summons;
 /// CollectableSecretObject is also the map's own collectable: only the mana and apocalypse-soul crystals of the skill
 /// trees are mirrored (their prefab names).
 /// </summary>
-public static class PassiveObjectSync
+public static partial class PassiveObjectSync
 {
     private static readonly Type[] Types =
     {
@@ -60,6 +60,10 @@ public static class PassiveObjectSync
         public List<Part>? Parts;
         public float PartsAt = -99f;
         public readonly Dictionary<uint, PartState> SentParts = new();
+        // 1.5.0 material values (PassiveObjectSync.Generic.cs)
+        public List<MatWatch>? Mats;
+        public float MatsAt = -99f;
+        public readonly Dictionary<ulong, Vector4> SentMats = new();
     }
 
     private struct PartState
@@ -98,14 +102,20 @@ public static class PassiveObjectSync
         if (!CoopSession.LocalInRun || GameState.LocalPlayerEntity == null) return;
         string name = Enemies.EnemyPrefabKeys.StripClone(comp.gameObject.name);
         if (type == CollectableIndex && !CrystalNames().Contains(name)) return; // the map's own collectables
+        Track(comp, (byte)type, name);
+    }
+
+    /// <summary>One of our own objects to mirror: by its typed Setup patch, or (1.5.0) found by the powers/ scan.</summary>
+    private static void Track(Component comp, byte type, string name)
+    {
         if (Own.TryGetValue(comp.Pointer, out var old)) Forget(old);
         if (Own.Count >= MaxOwned) return;
         ushort id = _nextId++;
         if (_nextId == 0) _nextId = 1;
-        var o = new Owned { Id = id, Type = (byte)type, Name = name, Comp = comp, Ptr = comp.Pointer };
+        var o = new Owned { Id = id, Type = type, Name = name, Comp = comp, Ptr = comp.Pointer };
         Own[o.Ptr] = o;
-        if (NetworkManager.HasPeer) SendSpawn(o);
-        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Own {Types[type].Name} #{id} '{name}' at {comp.transform.position}.");
+        if (NetworkManager.HasPeer) { SendSpawn(o); SendParts(o, full: true); SendMaterials(o, full: true); }
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Own {TypeName(type)} #{id} '{name}' at {comp.transform.position}.");
     }
 
     /// <summary>The prefab names of the skill trees' crystals (CollectableSecretObject used by a player mechanic).</summary>
@@ -188,6 +198,7 @@ public static class PassiveObjectSync
             _refreshTimer = 0f;
             foreach (var o in Own.Values) SendSpawn(o);
             foreach (var o in Own.Values) SendParts(o, full: true);
+            foreach (var o in Own.Values) SendMaterials(o, full: true);
             return;
         }
 
@@ -196,6 +207,7 @@ public static class PassiveObjectSync
         {
             _partsTimer = 0f;
             foreach (var o in Own.Values) SendParts(o, full: false);
+            foreach (var o in Own.Values) SendMaterials(o, full: false);
         }
 
         _stateTimer += dt;
@@ -393,6 +405,7 @@ public static class PassiveObjectSync
             foreach (var p in parts) m.PartMap[p.Hash] = p.T;
             LogLayout("copy", m.Name, parts);
             foreach (var kv in m.PartStates) ApplyPart(m, kv.Key, kv.Value);
+            IndexRenderers(m); // 1.5.0
         }
         catch (Exception ex) { if (_errors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Indexing '{m.Name}': {ex.Message}"); }
     }
@@ -413,6 +426,9 @@ public static class PassiveObjectSync
         public bool IsMarker;
         public readonly Dictionary<uint, PartState> PartStates = new(); // 1.4.1: latest per part, kept across rebuilds
         public Dictionary<uint, Transform>? PartMap;
+        // 1.5.0 material values: latest per (renderer path hash, property name hash); the copy's renderers by path hash
+        public readonly Dictionary<ulong, MatValue> MatStates = new();
+        public Dictionary<uint, Renderer>? RendererMap;
     }
 
     private static readonly Dictionary<int, Mirror> Remote = new();
@@ -433,7 +449,7 @@ public static class PassiveObjectSync
         float radius = r.AvailableBytes >= 4 ? r.GetFloat() : 0f;
         _recvSpawns++;
         byte from = PacketRouter.From;
-        if (type >= Types.Length || !Players.IsPresent(from) || !CoopSession.LocalInRun) return;
+        if ((type >= Types.Length && type != PowersType) || !Players.IsPresent(from) || !CoopSession.LocalInRun) return;
         int key = KeyOf(from, id);
         if (!Remote.TryGetValue(key, out var m))
         {
@@ -530,7 +546,7 @@ public static class PassiveObjectSync
         {
             _missing++;
             if (LoggedMissing.Add(m.Name))
-                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] No prefab for slot {m.Slot}'s {Types[m.Type].Name} '{m.Name}' here (another character's asset): a marker stands in.");
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] No prefab for slot {m.Slot}'s {TypeName(m.Type)} '{m.Name}' here (another character's asset): a marker stands in.");
             // 1.3.1: that character's own assets aren't loaded in this game: a ring and a beam in its player's color.
             m.Go = BuildMarker(m);
             if (m.Go == null) m.Failed = true;
@@ -676,6 +692,7 @@ public static class PassiveObjectSync
             // aren't loaded here (another character's) spawn over and over: a hitch per spawn.
             if (MissAt.TryGetValue(key, out float at) && Time.unscaledTime - at < 20f) return null;
         }
+        if (type == PowersType) return PowersPrefab(name); // 1.5.0: generic, by powers/ prefab name
         GameObject? found = null;
         try
         {
@@ -739,8 +756,15 @@ public static class PassiveObjectSync
         {
             var all = Resources.LoadAll("powers", Il2CppType.Of<UnityEngine.Object>()); // no untyped LoadAll in this interop
             int n = all?.Length ?? 0;
-            for (int i = 0; i < n; i++) { var o = all![i]; if (o != null) LoadedTrees.Add(o); }
-            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Loaded the mini-game prefabs ('powers/', {n} assets).");
+            for (int i = 0; i < n; i++)
+            {
+                var o = all![i];
+                if (o == null) continue;
+                LoadedTrees.Add(o);
+                var go = o.TryCast<GameObject>();
+                if (go != null && !PowersByName.ContainsKey(go.name)) PowersByName[go.name] = go; // 1.5.0
+            }
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Loaded the mini-game prefabs ('powers/', {n} assets, {PowersByName.Count} prefabs).");
             return n > 0;
         }
         catch (Exception ex)
@@ -758,6 +782,8 @@ public static class PassiveObjectSync
     public static void Tick(float dt)
     {
         if (NetworkManager.Role == NetRole.None) return;
+        try { ScanPowers(dt); } // 1.5.0: generic owner detection (PassiveObjectSync.Generic.cs)
+        catch (Exception ex) { if (_errors++ < 5) Plugin.StaticLog.LogError($"[SoulstoneCoop][passives] Scan: {ex}"); }
         try { TickOwn(dt); }
         catch (Exception ex) { if (_errors++ < 5) Plugin.StaticLog.LogError($"[SoulstoneCoop][passives] Own: {ex}"); }
         try { TickRemote(dt); }
@@ -767,7 +793,7 @@ public static class PassiveObjectSync
         if (_telemetryTimer < 10f) return;
         _telemetryTimer = 0f;
         if (Own.Count + Remote.Count + _sentSpawns + _recvSpawns + _missing + _errors + _sentParts + _recvParts == 0) return;
-        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] own={Own.Count} sentSpawns={_sentSpawns} sentStates={_sentStates} | others={Remote.Count} recvSpawns={_recvSpawns} built={_built} missing={_missing} errors={_errors} | parts sent={_sentParts} recv={_recvParts} applied={_appliedParts} unmatched={_unmatchedParts}");
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] own={Own.Count} sentSpawns={_sentSpawns} sentStates={_sentStates} | others={Remote.Count} recvSpawns={_recvSpawns} built={_built} missing={_missing} errors={_errors} | parts sent={_sentParts} recv={_recvParts} applied={_appliedParts} unmatched={_unmatchedParts} | {GenericTelemetry()}");
         _sentSpawns = _sentStates = _recvSpawns = _built = 0;
         _sentParts = _recvParts = _appliedParts = _unmatchedParts = 0;
     }
