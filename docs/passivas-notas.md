@@ -48,6 +48,10 @@ Cada objeto vem de um `SkillTree*SO` aplicado ao jogador, e passa pelo próprio 
   - o clone desliza até a posição recebida;
   - tudo some ao trocar de cena ou quando o dono sai.
 
+## 1.3.1: marcador quando o prefab não está carregado
+
+No teste, o jogo do Legionnaire não tinha a pedra do Demon Hunter carregada (`No prefab for slot 0's DemonicBindingStone`): o prefab fica num componente do personagem, não nos SOs carregados para todos. Nesse caso aparece um marcador no lugar: um anel no chão e um feixe curto, na cor do dono (`GhostOverhead.ColorFor`), com o material das linhas do caído (`DownedMarkers.LineMaterial`). Também é só visual.
+
 ## Como testar
 
 1. A joga de Legionnaire. Na tela de B aparecem os legionários caídos no mesmo lugar.

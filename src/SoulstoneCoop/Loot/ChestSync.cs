@@ -526,6 +526,7 @@ public static class ChestSync
         public bool LocalInside;     // from the copy's OnTriggerEnter/Exit
         public bool SentInside;
         public bool Opening;
+        public bool VoicePlayed;     // our character's "opening a chest" / "mining" line, once per object
         public float DestroyAt;
     }
 
@@ -649,6 +650,7 @@ public static class ChestSync
             if (inside != m.SentInside)
             {
                 m.SentInside = inside;
+                if (inside && !m.IsTask && !m.VoicePlayed) PlayOpeningVoice(m, local!);
                 var w = new NetDataWriter();
                 w.Put((byte)PacketType.RewardPresence);
                 w.Put(m.Id);
@@ -658,6 +660,23 @@ public static class ChestSync
             }
         }
     }
+
+    /// <summary>1.3.2: on the host, InteractableRewardObject.UpdateAll has the player's character say its line when
+    /// someone starts opening (VoiceOverManager.TreasureChestOpen, or PlayMiningStart for ore), always for the host's
+    /// character. Here the guest's own character says it, the first time it steps on the copy.</summary>
+    private static void PlayOpeningVoice(Mirror m, Entity local)
+    {
+        m.VoicePlayed = true;
+        try
+        {
+            var ct = (CharactersType)Lobby.CoopSession.Local.CharacterId;
+            if (m.Name.Contains("-Mine") || m.Name.Contains("Mineral")) VoiceOverManager.PlayMiningStart(ct, local);
+            else VoiceOverManager.TreasureChestOpen(ct, local);
+        }
+        catch (Exception ex) { if (_voiceErrors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Opening voice for '{m.Name}': {ex.Message}"); }
+    }
+
+    private static int _voiceErrors;
 
     private static void Build(Mirror m)
     {

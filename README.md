@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.3.** Played by two people over Steam (the 1.2 features); the 1.3 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.4.** Played by two people over Steam (the 1.2 features); the 1.3 and 1.4 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
@@ -44,7 +44,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Combat | Both players damage the same enemies; enemies chase and hit whoever is closest; statuses (slow, stun) reach the guest |
 | Skills | Each player sees the other's skills (visual only; damage is synced separately), with channelled beams following their aim |
 | Progression | Team XP (whoever picks up an orb, both get it), loot and kill credit on the guest; each player keeps their own level and upgrades |
-| Chests and ore | Appear for everyone, and anyone can open them; each extra player standing on one opens it faster (`[Coop] ChestOpenBonusPerPlayer`); the loot goes to everyone |
+| Chests and ore | Appear for everyone, and anyone can open them; each extra player standing on one opens it faster (`[Coop] ChestOpenBonusPerPlayer`); the loot goes to everyone; your own character says its line when you start opening one |
 | Map tasks | The objective markers on the map appear for everyone, and any player can start them (faster with more players on the marker); everyone sees the task's timer or kill counter; the enemies and the reward are shared |
 | Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel at the top of the screen that you keep playing under (1-4 or the gamepad's D-pad to pick) |
 | Death | Downed state, any ally standing next to you revives you: a ring on the ground shows the revive area and fills as you're revived, and a line ties each downed player to the nearest living ally (stepping away to dodge only slowly drains the revive bar); defeat only when everyone is down; with the host down, enemies keep coming to the players still standing; the God's meteors go after every living player, not only the host; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
@@ -54,15 +54,17 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 
 ## Known limitations
 
-- Rejoining a run in progress keeps nothing (behind `[Coop] AllowRejoin`, off by default).
+- Rejoining a run in progress is experimental (behind `[Coop] AllowRejoin`, off by default): a player who was in that run comes back with their level, upgrades and items, as long as their game stayed open; anyone else joins as a new character.
 - XP earned while you are down is held and given when you are revived; if nobody revives you, it is lost.
 - Crusade mode is not supported in co-op.
+- A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
+- Another character's passive objects and ascension effects need that character's assets in your game; when they aren't loaded, the objects show as a colored marker and those effects are skipped.
 
 The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Roadmap
 
-- Full rejoin keeping level, skills and items.
+- Rejoin without a reload (staying in the same scene while the connection comes back).
 - Crusade mode.
 
 ## Settings
@@ -77,7 +79,7 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | `[Coop] LevelUpOverlayOpacity` | `0.8` | Opacity of the compact upgrade panel while the mouse isn't over it |
 | `[Coop] PartyHud` | `true` | In a run, a panel at the top left with each partner's health, level, XP, revives left and state (down, reviving, dead, disconnected) |
 | `[Coop] EndRunWhenHostLeaves` | `true` | End the guest's run when the host disconnects |
-| `[Coop] AllowRejoin` | `false` | Experimental: let the guest rejoin a run in progress (as a fresh character) |
+| `[Coop] AllowRejoin` | `false` | Host, experimental: let players join a run in progress; one who dropped out of it comes back with the level, upgrades and items they had |
 | `[Coop] MaxPlayers` | `8` | Lobby size (2-8) |
 | `[Coop] EnemyScalePerPlayer` | `0` | Extra enemies per additional player (try `0.25`) |
 | `[Coop] ReplicaCastRadius` | `60` | Don't draw skills of partners farther than this (also how far from a guest regular enemies' attack animations are sent) |

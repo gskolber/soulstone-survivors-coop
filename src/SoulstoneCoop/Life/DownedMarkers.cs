@@ -258,6 +258,14 @@ public static class DownedMarkers
         return true;
     }
 
+    /// <summary>The line material (PassiveObjectSync's stand-in markers use it too); null if the build has none.</summary>
+    internal static Material? LineMaterial(out bool vertexColors)
+    {
+        _material ??= FindMaterial(out _vertexColors);
+        vertexColors = _vertexColors;
+        return _material;
+    }
+
     private static Material? FindMaterial(out bool vertexColors)
     {
         vertexColors = false;

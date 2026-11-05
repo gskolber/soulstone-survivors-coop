@@ -10,10 +10,9 @@ No convidado, os inimigos não ficavam virados para o jogador que atacavam, nem 
 
 ## Correção (`ClientPuppets.UpdateFacing`)
 
-A cada 0,2 s, para cada marionete do time inimigo, o mod procura o jogador vivo mais perto: nós mesmos, se de pé, ou o fantasma de um parceiro de pé. Ele conta:
+A cada 0,2 s, para cada marionete do time inimigo, o mod procura o jogador vivo mais perto: nós mesmos, se de pé, ou o fantasma de um parceiro de pé. Ele só conta quando o inimigo está quase parado no host (< 0,6 u/s), a até 14 u.
 
-- a até 6 u, sempre;
-- a até 14 u, quando a marionete está quase parada (< 1,5 u/s), como um inimigo de longe atirando.
+**1.3.1:** na primeira versão também contava a até 6 u andando. Um inimigo olhando para um jogador enquanto anda para outro lado andava de costas (o "moonwalk"), e o jogo move mais devagar um personagem que não está virado para onde vai: a Morte (o inimigo imortal) se arrastava. Andando, a marionete agora vira para onde anda, como no host.
 
 Com alvo, a marionete passa para `RotationMode.LookTowardsTarget` com o transform desse jogador. O próprio `ModifiedCharacter` gira suave, e confere se o alvo ainda existe (`UpdateRotationAndNavMeshAgent` 0x7A63B0). Sem alvo, ela volta ao modo dela, e o yaw do host volta a valer quando ela para.
 

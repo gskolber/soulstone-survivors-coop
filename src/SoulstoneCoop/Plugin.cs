@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.3.0";
+    public const string PluginVersion = "1.4.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -52,7 +52,7 @@ public class Plugin : BasePlugin
         var simLoss = Config.Bind("Debug", "SimulatePacketLossPercent", 0,
             "Test only: percent of packets lost (0-50). Reliable messages are resent, so they arrive late instead. 0 = off.");
         AllowRejoin = Config.Bind("Coop", "AllowRejoin", false,
-            "Host only, experimental: a partner who connects while you are in a run is brought into it (as a new character). Off = they wait in the menu.");
+            "Host only, experimental: a partner who connects while you are in a run is brought into it; one who dropped out of this run comes back with the level, upgrades and items they had (a newcomer starts as a new character). Off = they wait in the menu.");
         EndRunWhenHostLeaves = Config.Bind("Coop", "EndRunWhenHostLeaves", true,
             "Client: when the host disconnects mid-run, end the run (surrender) a few seconds later instead of staying in an empty map.");
         SenderClock = Config.Bind("Coop", "SenderClock", false,
@@ -94,6 +94,8 @@ public class Plugin : BasePlugin
         AscensionSync.ApplyPatch(harmony);
         Summons.PassiveObjectSync.ApplyPatches(harmony);
         Enemies.HostHazards.ApplyPatches(harmony);
+        Summons.CompanionFolderCapturePatch.Apply(harmony);
+        AscensionFx.ApplyPatches(harmony);
 
         // Patched by hand: its by-value struct parameter (EntityByEnemyPrefabData) is the kind of signature
         // Il2CppInterop trampolines can choke on, and a failure here must not take the other patches down.

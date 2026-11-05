@@ -32,6 +32,17 @@ public static class AscensionSync
     private const float ScanInterval = 0.25f;
     private const float RefreshInterval = 3f;
 
+    /// <summary>An object an ascension adds to the player (SiegeExpertComponent._modelOnActivate: the Legionnaire's
+    /// ModelToAddOnActivatePrefab), under one of the model's transforms.</summary>
+    private readonly struct Attachment
+    {
+        public readonly string Name, Parent;
+        public readonly Vector3 Pos;
+        public readonly Quaternion Rot;
+        public readonly float Scale;
+        public Attachment(string name, string parent, Vector3 pos, Quaternion rot, float scale) { Name = name; Parent = parent; Pos = pos; Rot = rot; Scale = scale; }
+    }
+
     private readonly struct ModelInfo
     {
         public readonly string Name, Path;
@@ -44,12 +55,17 @@ public static class AscensionSync
     private static string _sentSignature = "";
     private static readonly Dictionary<string, string> PathByName = new();
     private static readonly List<ModelInfo> Scratch = new();
+    private static readonly List<Attachment> AttachScratch = new();
+    private static IntPtr _siegeOwner;
+    private static SiegeExpertComponent? _siege;
+    private static float _siegeRetryAt;
     private static int _sent, _recv, _applied, _buildFailures, _errors;
 
     // ---- receiver ----
     private sealed class Wanted
     {
         public readonly List<ModelInfo> Models = new();
+        public readonly List<Attachment> Attachments = new();
         public float RootScale = 1f;
         public string Signature = "";
     }
@@ -61,6 +77,7 @@ public static class AscensionSync
         public Animator? BaseAnimator;
         public string BaseName = "";
         public readonly Dictionary<string, (GameObject? Go, Animator? Anim)> Extra = new();
+        public readonly Dictionary<string, GameObject?> Attached = new();
         public string AppliedSignature = "";
         public string ShownName = "";
     }
@@ -121,9 +138,11 @@ public static class AscensionSync
             Scratch.Add(new ModelInfo(name, path ?? "", refs.transform.localScale.x));
         }
         float rootScale = local.transform.localScale.x;
+        CollectAttachments(local);
         var sb = new System.Text.StringBuilder();
         foreach (var m in Scratch) sb.Append(m.Name).Append('@').Append(m.Scale.ToString("F2")).Append(';');
         sb.Append("root@").Append(rootScale.ToString("F2"));
+        foreach (var a in AttachScratch) sb.Append(";+").Append(a.Name).Append('>').Append(a.Parent);
         string sig = sb.ToString();
         bool changed = sig != _sentSignature;
         if (!changed && _refreshTimer < RefreshInterval) return;
@@ -133,11 +152,39 @@ public static class AscensionSync
         w.Put((byte)Scratch.Count);
         foreach (var m in Scratch) { w.Put(m.Name); w.Put(m.Path); w.Put(m.Scale); }
         w.Put(rootScale);
+        w.Put((byte)AttachScratch.Count);
+        foreach (var a in AttachScratch)
+        {
+            w.Put(a.Name); w.Put(a.Parent);
+            w.Put(a.Pos.x); w.Put(a.Pos.y); w.Put(a.Pos.z);
+            w.Put(a.Rot.x); w.Put(a.Rot.y); w.Put(a.Rot.z); w.Put(a.Rot.w);
+            w.Put(a.Scale);
+        }
         NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
         _sent++;
         _refreshTimer = 0f;
         if (changed) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][ascension] Own models now: {sig}.");
         _sentSignature = sig;
+    }
+
+    /// <summary>What an ascension adds to our player while it's on (the Legionnaire's ModelToAddOnActivatePrefab).</summary>
+    private static void CollectAttachments(Entity local)
+    {
+        AttachScratch.Clear();
+        // Looked up again every 5 s while missing: the component can come after the entity (talent setup).
+        if (_siegeOwner != local.Pointer || (_siege == null && Time.unscaledTime >= _siegeRetryAt))
+        {
+            _siegeOwner = local.Pointer;
+            _siegeRetryAt = Time.unscaledTime + 5f;
+            _siege = null;
+            var c = local.GetComponentInChildren(Il2CppType.Of<SiegeExpertComponent>(), true);
+            if (c != null) _siege = new SiegeExpertComponent(c.Pointer);
+        }
+        var go = _siege != null ? _siege._modelOnActivate : null;
+        if (go == null || !go.activeInHierarchy) return;
+        var t = go.transform;
+        AttachScratch.Add(new Attachment(Enemies.EnemyPrefabKeys.StripClone(go.name), t.parent != null ? t.parent.name : "",
+            t.localPosition, t.localRotation, t.localScale.x));
     }
 
     // =====================================================================================
@@ -155,9 +202,19 @@ public static class AscensionSync
             w.Models.Add(new ModelInfo(name, path, scale));
         }
         w.RootScale = r.GetFloat();
+        int na = r.GetByte();
+        for (int i = 0; i < na; i++)
+        {
+            string name = r.GetString(), parent = r.GetString();
+            var pos = new Vector3(r.GetFloat(), r.GetFloat(), r.GetFloat());
+            var rot = new Quaternion(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat());
+            float scale = r.GetFloat();
+            w.Attachments.Add(new Attachment(name, parent, pos, rot, scale));
+        }
         var sb = new System.Text.StringBuilder();
         foreach (var m in w.Models) sb.Append(m.Name).Append('@').Append(m.Scale.ToString("F2")).Append(';');
         sb.Append("root@").Append(w.RootScale.ToString("F2"));
+        foreach (var a in w.Attachments) sb.Append(";+").Append(a.Name).Append('>').Append(a.Parent);
         w.Signature = sb.ToString();
         _recv++;
         WantedBySlot[PacketRouter.From] = w;
@@ -200,7 +257,13 @@ public static class AscensionSync
         var show = new List<(GameObject Go, Animator? Anim, string Name)>();
         foreach (var m in want.Models)
         {
-            if (m.Name == g.BaseName) { baseWanted = true; continue; }
+            if (m.Name == g.BaseName)
+            {
+                baseWanted = true;
+                // 1.3.1: the Legionnaire's ascension keeps its model and grows it (ActiveScaleFactor): its scale counts too.
+                if (g.BaseModel != null && m.Scale > 0.01f) g.BaseModel.transform.localScale = Vector3.one * m.Scale;
+                continue;
+            }
             if (!g.Extra.TryGetValue(m.Name, out var extra))
             {
                 extra = BuildExtra(r, ghost, m);
@@ -236,6 +299,7 @@ public static class AscensionSync
 
         float rs = Mathf.Clamp(want.RootScale, 0.3f, 4f);
         ghost.transform.localScale = Vector3.one * rs;
+        ApplyAttachments(r, ghost, g, want);
         _applied++;
         if (shown != g.ShownName)
         {
@@ -243,6 +307,85 @@ public static class AscensionSync
             g.ShownName = shown;
         }
         return true;
+    }
+
+    private static void ApplyAttachments(RemotePlayer r, GameObject ghost, GhostModels g, Wanted want)
+    {
+        foreach (var a in want.Attachments)
+        {
+            if (!g.Attached.TryGetValue(a.Name, out var go))
+            {
+                go = BuildAttachment(r, a);
+                g.Attached[a.Name] = go;
+            }
+            if (go == null) continue;
+            // Under the transform of the same name in the model that's on (same rig), else on the ghost's root.
+            var shownModel = r.ModelAnimator != null ? r.ModelAnimator.transform : ghost.transform;
+            var parent = FindDeep(shownModel, a.Parent) ?? FindDeep(ghost.transform, a.Parent) ?? ghost.transform;
+            if (go.transform.parent == null || go.transform.parent.Pointer != parent.Pointer) go.transform.SetParent(parent, false);
+            go.transform.localPosition = a.Pos;
+            go.transform.localRotation = a.Rot;
+            go.transform.localScale = Vector3.one * (a.Scale > 0.01f ? a.Scale : 1f);
+            if (!go.activeSelf) go.SetActive(true);
+        }
+        foreach (var kv in g.Attached)
+        {
+            if (kv.Value == null) continue;
+            bool wanted = false;
+            foreach (var a in want.Attachments) if (a.Name == kv.Key) { wanted = true; break; }
+            if (!wanted && kv.Value.activeSelf) kv.Value.SetActive(false);
+        }
+    }
+
+    private static Transform? FindDeep(Transform root, string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        if (root.name == name) return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var found = FindDeep(root.GetChild(i), name);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /// <summary>The attachment's prefab: SiegeExpertData.ModelToAddOnActivatePrefab of the loaded skill trees.</summary>
+    private static GameObject? BuildAttachment(RemotePlayer r, Attachment a)
+    {
+        GameObject? prefab = null;
+        try
+        {
+            var all = Resources.FindObjectsOfTypeAll(Il2CppType.Of<SkillTreeSiegeExpertTalentSO>());
+            for (int i = 0; i < all.Length && prefab == null; i++)
+            {
+                var so = all[i] != null ? new SkillTreeSiegeExpertTalentSO(all[i].Pointer) : null;
+                var p = so?.Data?.ModelToAddOnActivatePrefab;
+                if (p != null && p.name == a.Name) prefab = p;
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] Resolving attachment '{a.Name}': {ex.Message}"); }
+        if (prefab == null)
+        {
+            if (LoggedMissing.Add("+" + a.Name)) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] No prefab for slot {r.Slot}'s attachment '{a.Name}'.");
+            return null;
+        }
+        var holder = new GameObject("SoulstoneCoop_AttachmentBuild");
+        holder.SetActive(false);
+        try
+        {
+            var go = UnityEngine.Object.Instantiate(prefab, holder.transform);
+            VisualGhostFactory.StripToVisualOnly(go, null, keepEffects: true);
+            go.SetActive(false);
+            go.transform.SetParent(null, false);
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][ascension] Slot {r.Slot} attachment '{a.Name}' built (on '{a.Parent}').");
+            return go;
+        }
+        catch (Exception ex)
+        {
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] Building attachment '{a.Name}': {ex.Message}");
+            return null;
+        }
+        finally { UnityEngine.Object.Destroy(holder); }
     }
 
     private static (GameObject? Go, Animator? Anim) BuildExtra(RemotePlayer r, GameObject ghost, ModelInfo m)
@@ -262,11 +405,17 @@ public static class AscensionSync
     }
 
     private static readonly Dictionary<string, PlayerPrefabReferences?> PrefabCache = new();
+    private static readonly Dictionary<string, float> PrefabMissAt = new();
 
     private static PlayerPrefabReferences? ResolvePrefab(ModelInfo m, out string via)
     {
         via = "cache";
-        if (PrefabCache.TryGetValue(m.Name + "|" + m.Path, out var cached) && cached != null) return cached;
+        string key = m.Name + "|" + m.Path;
+        if (PrefabCache.TryGetValue(key, out var cached))
+        {
+            if (cached != null) return cached;
+            if (PrefabMissAt.TryGetValue(key, out float at) && Time.unscaledTime - at < 20f) return null; // scanned lately
+        }
         PlayerPrefabReferences? found = null;
         try
         {
@@ -284,8 +433,26 @@ public static class AscensionSync
             }
         }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] Resolving '{m.Name}': {ex.Message}"); }
-        PrefabCache[m.Name + "|" + m.Path] = found;
+        PrefabCache[key] = found;
+        if (found == null) PrefabMissAt[key] = Time.unscaledTime;
         return found;
+    }
+
+    /// <summary>ModSkinLoader replaced the ghost's main model: work its models out again on the next tick.
+    /// 1.3.2: the extra models and attachments built for the old one are destroyed (they stayed under the ghost: an
+    /// ascended partner swapping skins kept the old ascension model on too).</summary>
+    internal static void InvalidateGhost(byte slot)
+    {
+        if (Applied.TryGetValue(slot, out var g)) DestroyBuilt(g);
+        Applied.Remove(slot);
+    }
+
+    private static void DestroyBuilt(GhostModels g)
+    {
+        foreach (var e in g.Extra.Values) { try { if (e.Go != null) UnityEngine.Object.Destroy(e.Go); } catch { } }
+        foreach (var a in g.Attached.Values) { try { if (a != null) UnityEngine.Object.Destroy(a); } catch { } }
+        g.Extra.Clear();
+        g.Attached.Clear();
     }
 
     /// <summary>A player left the session: its wishes and models go (the models with its ghost).</summary>

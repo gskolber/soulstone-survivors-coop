@@ -21,9 +21,8 @@ public static class ClientPuppets
     private const float LeadSeconds = 0.1f;      // MoveToLocation aims slightly ahead; the agent smooths it
     private const float MaxExtrapolation = 0.25f;
     // Facing (docs/inimigos-olhar-notas.md): close enemies look at the player they are fighting.
-    private const float FaceMeleeRange = 6f;     // u: always face the nearest living player this close
-    private const float FaceRangedRange = 14f;   // u: ...and this far while (nearly) standing still
-    private const float FaceStillSpeed = 1.5f;   // u/s
+    private const float FaceRange = 14f;         // u: face the nearest living player within this...
+    private const float FaceStillSpeed = 0.6f;   // u/s: ...only while the host's enemy is (nearly) standing still
     private const float FaceCheckInterval = 0.2f;
     private const float TelemetryInterval = 5f;
 
@@ -426,9 +425,9 @@ public static class ClientPuppets
 
     /// <summary>The host's enemies turn with their movement (BasicAIComponent sets OrientToMovement) and the snapshot
     /// only carries their yaw, which here lags behind where the player really is, and the puppet's own small corrections
-    /// turn it sideways. Close to a living player (any distance while it stands and shoots), the puppet looks at that
-    /// player with the game's own LookTowardsTarget rotation (ModifiedCharacter rotates it smoothly); farther away or on
-    /// the move, it goes back to its own rotation mode.</summary>
+    /// turn it sideways. A puppet whose enemy stands (nearly) still on the host, within FaceRange of a living player,
+    /// looks at that player with the game's own LookTowardsTarget rotation (ModifiedCharacter rotates it smoothly); on
+    /// the move or with nobody near, it goes back to its own rotation mode (it faces where it walks).</summary>
     private static void UpdateFacing(Puppet p, ModifiedCharacter ch, Vector3 at, Vector3 vel, float now)
     {
         if (now < p.FaceCheckAt) return;
@@ -439,8 +438,10 @@ public static class ClientPuppets
             Transform? best = null;
             if (p.IsEnemy)
             {
-                float still = Horizontal(vel) < FaceStillSpeed ? FaceRangedRange : FaceMeleeRange;
-                float bestD = still * still;
+                // 1.3.1: only a (nearly) standing enemy looks at its player. One on the move turns with its movement as
+                // on the host: looking at a player while walking elsewhere made it moonwalk, and the game moves a
+                // character slower when it doesn't face where it goes (Death crawled).
+                float bestD = Horizontal(vel) < FaceStillSpeed ? FaceRange * FaceRange : 0f;
                 foreach (var t in LivingPlayerTransforms())
                 {
                     if (t == null) continue;

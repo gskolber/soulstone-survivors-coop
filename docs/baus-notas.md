@@ -130,7 +130,7 @@ Muda o formato de pacote: host e convidados precisam da mesma build. Para public
 ## Fora do escopo (próximo)
 
 - Os gatilhos de **iniciar** uma `MapTask` (o objeto da tarefa no mapa) continuam só no host: o convidado não começa uma tarefa sozinho. O mesmo mecanismo serve, porque também é um `InteractableTriggerObject`.
-- A voz de "abrindo baú" do personagem do convidado não toca.
+- A voz de "abrindo baú" do personagem do convidado não tocava. **1.4:** na primeira vez que o convidado pisa na cópia, o personagem dele fala (`VoiceOverManager.TreasureChestOpen`, ou `PlayMiningStart` para minério, reconhecido pelo nome `-Mine` / `Mineral`). No host, quem fala continua sendo o personagem do host, mesmo com só convidados em cima.
 - `InteractableAutoRewardObject` (caverna dos goblins, Cruzada) não é rastreado.
 
 ## Roteiro de teste

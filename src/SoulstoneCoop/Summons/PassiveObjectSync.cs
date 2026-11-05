@@ -310,10 +310,12 @@ public static class PassiveObjectSync
         var template = ResolveTemplate(m.Type, m.Name);
         if (template == null)
         {
-            m.Failed = true;
             _missing++;
             if (LoggedMissing.Add(m.Name))
-                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] No prefab for slot {m.Slot}'s {Types[m.Type].Name} '{m.Name}': not shown.");
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] No prefab for slot {m.Slot}'s {Types[m.Type].Name} '{m.Name}' here (another character's asset): a marker stands in.");
+            // 1.3.1: that character's own assets aren't loaded in this game: a ring and a beam in its player's color.
+            m.Go = BuildMarker(m);
+            if (m.Go == null) m.Failed = true;
             return;
         }
         GameObject? holder = null;
@@ -343,10 +345,92 @@ public static class PassiveObjectSync
         }
     }
 
+    private const int MarkerSegments = 40;
+    private const float MarkerRadius = 1.1f, MarkerHeight = 2.6f;
+
+    /// <summary>The stand-in for an object whose prefab isn't loaded here: a ring on the ground and a short beam, in the
+    /// owner's color (GhostOverhead.ColorFor), with the downed markers' line material. Visual only, like the clones.</summary>
+    private static GameObject? BuildMarker(Mirror m)
+    {
+        try
+        {
+            var mat = Life.DownedMarkers.LineMaterial(out bool vertexColors);
+            if (mat == null) return null;
+            var color = GhostOverhead.ColorFor(m.Slot);
+            color.a = 0.85f;
+            var root = new GameObject($"SoulstoneCoop_Partner{m.Slot}_{m.Name}_Marker");
+            root.transform.position = m.Target;
+
+            var ringGo = new GameObject("Ring");
+            ringGo.transform.SetParent(root.transform, false);
+            ringGo.transform.localPosition = new Vector3(0f, 0.12f, 0f);
+            ringGo.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // local XY lies on the ground
+            var ring = ringGo.AddComponent<LineRenderer>();
+            ring.useWorldSpace = false;
+            ring.loop = true;
+            ring.positionCount = MarkerSegments;
+            for (int i = 0; i < MarkerSegments; i++)
+            {
+                float a = i * Mathf.PI * 2f / MarkerSegments;
+                ring.SetPosition(i, new Vector3(Mathf.Sin(a) * MarkerRadius, Mathf.Cos(a) * MarkerRadius, 0f));
+            }
+            ring.alignment = LineAlignment.TransformZ;
+            ring.widthMultiplier = 0.12f;
+            Paint(ring, mat, vertexColors, color, color);
+
+            var beamGo = new GameObject("Beam");
+            beamGo.transform.SetParent(root.transform, false);
+            var beam = beamGo.AddComponent<LineRenderer>();
+            beam.useWorldSpace = false;
+            beam.positionCount = 2;
+            beam.SetPosition(0, Vector3.zero);
+            beam.SetPosition(1, Vector3.up * MarkerHeight);
+            beam.widthMultiplier = 0.08f;
+            var top = color;
+            top.a = 0f;
+            Paint(beam, mat, vertexColors, color, top);
+            return root;
+        }
+        catch (Exception ex)
+        {
+            if (_errors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Marker for '{m.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
+    private static void Paint(LineRenderer lr, Material mat, bool vertexColors, Color start, Color end)
+    {
+        lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        lr.receiveShadows = false;
+        lr.startColor = start;
+        lr.endColor = end;
+        if (vertexColors) { lr.sharedMaterial = mat; return; }
+        // One tinted copy per color, kept (a new Material per marker outlived its marker: materials aren't destroyed
+        // with their GameObject).
+        if (!TintedMaterials.TryGetValue(start, out var own) || own == null)
+        {
+            own = new Material(mat);
+            if (own.HasProperty("_BaseColor")) own.SetColor("_BaseColor", start);
+            if (own.HasProperty("_Color")) own.SetColor("_Color", start);
+            TintedMaterials[start] = own;
+        }
+        lr.sharedMaterial = own;
+    }
+
+    private static readonly Dictionary<Color, Material> TintedMaterials = new();
+
+    private static readonly Dictionary<string, float> MissAt = new();
+
     private static GameObject? ResolveTemplate(byte type, string name)
     {
         string key = type + "|" + name;
-        if (Templates.TryGetValue(key, out var cached) && cached != null) return cached;
+        if (Templates.TryGetValue(key, out var cached))
+        {
+            if (cached != null) return cached;
+            // 1.3.2: a miss is remembered for 20 s. Each try scans every loaded object of that type, and objects that
+            // aren't loaded here (another character's) spawn over and over: a hitch per spawn.
+            if (MissAt.TryGetValue(key, out float at) && Time.unscaledTime - at < 20f) return null;
+        }
         GameObject? found = null;
         try
         {
@@ -360,6 +444,7 @@ public static class PassiveObjectSync
         }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Resolving '{name}': {ex.Message}"); }
         Templates[key] = found;
+        if (found == null) MissAt[key] = Time.unscaledTime;
         return found;
     }
 

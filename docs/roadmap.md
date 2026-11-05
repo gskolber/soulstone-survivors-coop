@@ -60,10 +60,20 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Tarefas | Timer e contador da tarefa no painel do convidado (`tarefas-mapa-notas.md`) | — |
 | Perigos | Meteoros do deus se revezam entre os jogadores vivos (`perigos-notas.md`) | — |
 | Desempenho | Reciclador, snapshot, marionetes e vigia com menos trabalho por frame (`desempenho-notas.md`) | — |
+| **1.3.1** | Correções do teste da 1.3.0 e os itens abaixo; nunca publicada sozinha (entra na 1.4.0) | — |
+| Ascensão | Escala do modelo principal, objeto acrescentado (Legionnaire), legionários e criaturas invocados visíveis (chave da skill no `SummonSync`), efeitos de ativação (VFX, som, luz do mundo) (`ascensao-notas.md`) | — |
+| Skins de mod | Skin de mod do parceiro quando o mesmo mod está instalado; companheiros de arma (`ascensao-notas.md`) | — |
+| Passivas | Marcador no lugar quando o prefab do outro personagem não está carregado (`passivas-notas.md`) | — |
+| Olhar | Só inimigo parado olha para o jogador: sem moonwalk, a Morte volta à velocidade normal (`inimigos-olhar-notas.md`) | — |
+| **1.4.0** | Tudo abaixo junto, com a 1.3.1 | — |
+| Reentrada | Quem caiu da run volta com nível, upgrades, runas e itens (`RunStart` com id da run; build guardada a cada 5 s; atrás de `AllowRejoin`) (`reentrada-notas.md`) | — |
+| Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
+| Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
+| Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
 
 ## Agora
 
-A **1.3.0** está com commit (`PluginVersion` subido, notas em `releases/1.3.0.md`, README atualizado). Ela junta a 1.2.0, testada com duas janelas no mesmo PC (`tools\test-local.cmd`), e o que ainda precisa desse teste: tarefas do mapa, host caído, invocações de ascensão, olhar dos inimigos, marcadores do caído, ascensão no fantasma, passivas, objetivos de tarefa, meteoros e a passada de desempenho (roteiros nas notas de cada um). Antes de publicar com `tools\release.ps1`, falta uma partida pela Steam com um amigo (checklist em `teste-1.3.0.md`).
+A **1.4.0** está com commit (`PluginVersion` subido, notas em `releases/1.4.0.md`, README atualizado). Ela junta a 1.3.0 e a 1.3.1, nunca publicadas sozinhas. A 1.3.1 e a 1.4.0 ainda não foram compiladas nem testadas: a próxima rodada é `tools\test-local.cmd` com os roteiros de `ascensao-notas.md`, `passivas-notas.md`, `inimigos-olhar-notas.md` e `reentrada-notas.md`. Antes de publicar com `tools\release.ps1`, falta uma partida pela Steam com um amigo (checklist em `teste-1.3.0.md`).
 
 ## Próximos itens
 
@@ -71,11 +81,10 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 
 | # | Item | Esforço | Origem |
 |---|---|---|---|
-| 1 | Reconexão completa no meio da run, mantendo nível, skills e itens (hoje a reentrada experimental entra como personagem novo). O jogo já salva e devolve isso entre fases do Endless (`GameModeBaseData`) | médio a grande | `fase8-notas.md`, §5 |
+| 1 | Reconexão transparente: o convidado espera o host voltar na mesma cena, sem recarregar (a reentrada da 1.4 recarrega a cena com a build guardada) | grande | `fase8-notas.md`, §5; `reentrada-notas.md` |
 | 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
 | — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
-| — | Skin de mod do parceiro vira a skin padrão; companheiros visuais da arma não aparecem no fantasma; efeitos de ativação da ascensão (VFX, luz) não vão para os outros | — | `fase5-notas.md`, `ascensao-notas.md` |
-| — | Voz de "abrindo baú" do personagem do convidado não toca | — | `baus-notas.md` |
+| — | Skin de mod que só o parceiro tem; assets de outro personagem que não estão carregados (passivas viram marcador, efeitos não aparecem) | — | `ascensao-notas.md`, `passivas-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)
 

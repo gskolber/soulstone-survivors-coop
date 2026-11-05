@@ -335,8 +335,7 @@ public static class CastSync
             foreach (var c in skill.GetComponentsInChildren<Component>(true))
             {
                 if (c == null) continue;
-                if (c.TryCast<SummonEntityEffect>() != null || c.TryCast<SummonEntityPositionalEffect>() != null
-                    || c.TryCast<SummonEntityAndForgetPositionalEffect>() != null) { found = true; break; }
+                if (global::SoulstoneCoop.Summons.SummonSync.SummonPrefabsOf(c) != null) { found = true; break; }
             }
         }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Checking '{skill.gameObject.name}' for summons: {ex.Message}"); }

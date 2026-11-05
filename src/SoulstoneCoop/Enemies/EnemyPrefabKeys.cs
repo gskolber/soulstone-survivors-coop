@@ -33,6 +33,8 @@ public static class EnemyPrefabKeys
 
     private static readonly Dictionary<IntPtr, string> HostKeyByPrefabPtr = new();
     private static readonly Dictionary<string, Resolved> ClientCache = new();
+    private static readonly Dictionary<string, float> ClientMissAt = new();
+    private const float ClientMissRetry = 5f;
 
     // Host: prefab name -> Resources path, from the game's own data (strings only), plus probe results.
     private static readonly Dictionary<string, string> ResIndex = new(StringComparer.OrdinalIgnoreCase);
@@ -43,6 +45,7 @@ public static class EnemyPrefabKeys
     {
         HostKeyByPrefabPtr.Clear();
         ClientCache.Clear();
+        ClientMissAt.Clear();
         ResIndex.Clear();
         ResProbeCache.Clear();
         _resIndexBuilt = false;
@@ -246,6 +249,9 @@ public static class EnemyPrefabKeys
     public static Resolved? ClientResolve(string key, in EnemySpawnMsg msg)
     {
         if (ClientCache.TryGetValue(key, out var cached) && cached.Prefab != null) return cached;
+        // 1.3.2: a key that resolved to nothing is tried again only after ClientMissRetry (the last try scans every
+        // loaded Entity; an unresolvable enemy spawned in waves was one scan per spawn).
+        if (ClientMissAt.TryGetValue(key, out float missAt) && Time.unscaledTime - missAt < ClientMissRetry) return null;
 
         Resolved? r;
         if (key.StartsWith(ResPrefix, StringComparison.Ordinal))
@@ -264,7 +270,8 @@ public static class EnemyPrefabKeys
         else
             r = ResolveByAddress(key) ?? ResolveOutsideLists(key, msg) ?? ResolveByName(LastSegment(key));
 
-        if (r != null) ClientCache[key] = r;
+        if (r != null) { ClientCache[key] = r; ClientMissAt.Remove(key); }
+        else ClientMissAt[key] = Time.unscaledTime;
         return r;
     }
 

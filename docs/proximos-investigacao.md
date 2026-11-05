@@ -67,6 +67,8 @@ Levantamento feito depois da 1.1.0, para decidir a ordem do que falta (`roadmap.
 
 ## 5. Reentrada de verdade (nível, skills e itens)
 
+> **Feito na 1.4** (atrás de `AllowRejoin`): `reentrada-notas.md`. O plano abaixo foi seguido, com o id da run no `RunStart` para não aplicar a build numa run diferente.
+
 **Achado principal.** O jogo já sabe salvar e devolver o estado do jogador no meio da run: é o que ele faz entre as fases do Endless (`portais-investigacao.md`, seção 2).
 - `GameModeBaseData.SetDataBasedOnPlayerEntity` 0x4FF600 grava nível, XP e XP necessário, poderes coletados (`CollectedPowerUps`), runas (`SelectedRunes`), banidos, slots travados, inventário (`InventoryComponent.SaveMatchInventoryData`), stats somados e tempo de partida.
 - `GameManagerUtil.InitialEndlessData` guarda isso entre cenas. `GetAndRemoveInitialData` 0x6ECEF0 lê, e `SetupPlayerForMatch` 0x6F46E0 devolve tudo ao jogador na cena nova.

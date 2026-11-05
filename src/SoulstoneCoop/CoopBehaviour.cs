@@ -160,8 +160,11 @@ public class CoopBehaviour : MonoBehaviour
             Skills.CastSync.Tick(Time.unscaledDeltaTime);
             Skills.AlwaysOnSync.Tick(Time.unscaledDeltaTime);
             AscensionSync.Tick(Time.unscaledDeltaTime);
+            AscensionFx.Tick(Time.unscaledDeltaTime);
+            ModSkinLoader.Tick();
             Summons.PassiveObjectSync.Tick(Time.unscaledDeltaTime);
             Loot.TaskObjectiveSync.Tick(Time.unscaledDeltaTime);
+            Lobby.RejoinProgress.Tick(Time.unscaledDeltaTime);
             Enemies.HostHazards.Tick(Time.unscaledDeltaTime);
             Loot.LootSync.Tick(Time.unscaledDeltaTime);
             Loot.ChestSync.Tick(Time.unscaledDeltaTime);

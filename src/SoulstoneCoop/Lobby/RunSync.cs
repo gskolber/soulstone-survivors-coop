@@ -27,6 +27,8 @@ public static class RunSync
         public int MasteryLevel;
         public bool HasAffixes;              // Survivors: override the client's affixes with List
         public List<string> Affixes = new();
+        public int RunId;                    // 1.4: which run (new on Fight/Restart, kept across stages): RejoinProgress
+        public bool Rejoin;                  // 1.4: the host's AllowRejoin (guests keep their build for a comeback)
     }
 
     private static RunParams? _clientRun;      // client: the host's run we're loading into (affix override)
@@ -123,6 +125,8 @@ public static class RunSync
             MasteryTier = _hostRun.MasteryTier,
             MasteryLevel = _hostRun.MasteryLevel,
             HasAffixes = _hostRun.HasAffixes,
+            RunId = _hostRun.RunId,
+            Rejoin = _hostRun.Rejoin,
         };
         p.Affixes.AddRange(_hostRun.Affixes);
         _hostRun = p;
@@ -156,6 +160,8 @@ public static class RunSync
             Mode = Global.SelectedGameMode,
             MasteryTier = Global.MasteryDifficultyTier,
             MasteryLevel = Global.MasteryDynamicLevel,
+            RunId = UnityEngine.Random.Range(1, int.MaxValue),
+            Rejoin = Plugin.AllowRejoin.Value,
         };
         if (p.Mode == GameModes.Survivor)
         {
@@ -176,6 +182,8 @@ public static class RunSync
         w.Put(p.HasAffixes);
         w.Put((ushort)p.Affixes.Count);
         foreach (var a in p.Affixes) w.Put(a);
+        w.Put(p.RunId);
+        w.Put(p.Rejoin);
     }
 
     private static RunParams ReadParams(NetDataReader r)
@@ -190,11 +198,13 @@ public static class RunSync
         };
         int n = r.GetUShort();
         for (int i = 0; i < n; i++) p.Affixes.Add(r.GetString());
+        p.RunId = r.GetInt();
+        p.Rejoin = r.GetBool();
         return p;
     }
 
     private static string Describe(RunParams p) =>
-        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}]";
+        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}] run={p.RunId}";
 
     // =====================================================================================
     // Client: follow the host
@@ -241,6 +251,7 @@ public static class RunSync
         if (missing != null) return missing;
 
         PrepareClientRun(p);
+        RejoinProgress.BeforeClientRunLoad(p.RunId, p.Rejoin, p.HasAffixes ? p.Affixes : null); // our build back, same run only
         Enemies.ClientPuppets.ResetForNewRun();
         PauseSync.ResetForRun();
         CoopSession.BeginLoading();
@@ -264,6 +275,8 @@ public static class RunSync
         Global.MasteryDifficultyTier = p.MasteryTier;
         Global.MasteryDynamicLevel = p.MasteryLevel;
         _clientRun = p;
+        RejoinProgress.CurrentRunId = p.RunId;
+        RejoinProgress.HostAllowsRejoin = p.Rejoin;
         _hostProgression = null;
         if (p.HasAffixes) _affixOverrides = 0;
     }
