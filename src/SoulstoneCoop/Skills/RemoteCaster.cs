@@ -29,6 +29,7 @@ public static class RemoteCaster
         public string Key = "";
         public Skill Skill = null!;
         public IntPtr Ptr;
+        public int Rejects; // 1.4.1: consecutive CastSkill == false
         public Il2CppSystem.Func<bool>? ChannelFunc;
         public Il2CppSystem.Func<Skill, Vector3>? FrontFunc, GroundFunc;
         public Vector3 Front, Ground;
@@ -636,6 +637,7 @@ public static class RemoteCaster
         // Not for a God cast (template): those fall around whichever player they aim at, maybe us.
         if (radius > 0f && template == null && me != null && RemoteProxy.TryGetPosition(slot, out var at, out _)
             && (at - me.transform.position).sqrMagnitude > radius * radius) return PlayResult.Culled;
+        if (caster.FailedKeys.Contains(m.Key)) return PlayResult.NoSkill; // 1.4.1: also given up after repeated rejects
         var c = GetOrCreateCopy(caster, m.Key, (SkillType)m.SkillType, template);
         if (c == null) return PlayResult.NoSkill;
 
@@ -683,7 +685,19 @@ public static class RemoteCaster
             // IgnoreAll: no cooldown, busy or combat checks, and no procs / chain casts / extra multicasts -
             // those arrive as their own cast messages from the other side.
             bool ok = caster.Entity._skillCaster.CastSkill(c.Skill, p, SkillActivationOptions.IgnoreAll);
-            if (!ok) return PlayResult.Rejected;
+            if (!ok)
+            {
+                // 1.4.1: a skill whose activation throws inside the game on our stand-in (the Machinist's
+                // ResonatingCrystals, a TemporaryRotatingSkill: NRE in DoActivate) comes back false every time and the
+                // interop logs the exception each cast. Three in a row: stop replaying it this match, once in the log.
+                if (++c.Rejects >= 3)
+                {
+                    caster.FailedKeys.Add(m.Key);
+                    Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] '{m.Key}' ({c.Kind}) rejected 3 times in a row on caster {slot}: not replayed for the rest of the match.");
+                }
+                return PlayResult.Rejected;
+            }
+            c.Rejects = 0;
             QueueVisualProbe(caster, c, m);
             if (template == null) PlayGhostAnimation(caster, c.Skill); // a God cast is not the ghost's own
             return PlayResult.Played;

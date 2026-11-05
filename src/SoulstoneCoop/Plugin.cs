@@ -20,6 +20,7 @@ public class Plugin : BasePlugin
     internal static BepInEx.Configuration.ConfigEntry<bool> AllowRejoin = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> EndRunWhenHostLeaves = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> SenderClock = null!;
+    internal static BepInEx.Configuration.ConfigEntry<bool> PowersProbe = null!;
     internal static BepInEx.Configuration.ConfigEntry<int> MaxPlayers = null!;
     internal static BepInEx.Configuration.ConfigEntry<SteamLobbyType> LobbyType = null!;
     internal static BepInEx.Configuration.ConfigEntry<float> EnemyScalePerPlayer = null!;
@@ -57,6 +58,8 @@ public class Plugin : BasePlugin
             "Client: when the host disconnects mid-run, end the run (surrender) a few seconds later instead of staying in an empty map.");
         SenderClock = Config.Bind("Coop", "SenderClock", false,
             "Experimental: place the partner and the enemies by the sender's clock instead of the arrival time (smoother with jitter).");
+        PowersProbe = Config.Bind("Debug", "PowersProbe", true,
+            "Diagnostic, log only: what your own hero spawns from the game's powers/ folder (mini-game objects), whether it comes from the pool, its parts and its material changes. Sends nothing.");
         // Phase 9 (docs/fase9-notas.md).
         MaxPlayers = Config.Bind("Coop", "MaxPlayers", 8, new BepInEx.Configuration.ConfigDescription(
             "Host: how many players fit in your co-op session, you included (2-8). Clients past that are refused.",

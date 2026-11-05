@@ -19,14 +19,15 @@ namespace SoulstoneCoop.Life;
 public static class DownedMarkers
 {
     private const int RingSegments = 64;
-    private const float RingWidth = 0.16f, ProgressWidth = 0.3f, LinkWidth = 0.1f;
+    private const float RingWidth = 0.24f, ProgressWidth = 0.34f, LinkWidth = 0.18f; // 1.4.1: thicker, easier to spot in a crowd
+    private const float BeaconHeight = 9f, BeaconWidth = 0.55f; // 1.4.1: a pulsing pillar over the body
     private const float GroundLift = 0.15f;
     private static readonly Color DownRed = new(0.95f, 0.28f, 0.22f, 1f);
     private static readonly Color ReviveGreen = new(0.35f, 1f, 0.5f, 1f);
 
     private sealed class Ring
     {
-        public LineRenderer? Circle, Arc;
+        public LineRenderer? Circle, Arc, Beacon;
         public bool Used;
     }
 
@@ -87,6 +88,7 @@ public static class DownedMarkers
             var ring = RingFor(d.Slot);
             ring.Used = true;
             DrawRing(ring, d.Pos, CoopLife.ProgressOf(d.Slot), pulse);
+            DrawBeacon(ring, d.Pos, pulse);
 
             // The nearest living player: most likely the one coming to revive.
             int best = -1;
@@ -107,6 +109,7 @@ public static class DownedMarkers
             if (r.Used) continue;
             SetOn(r.Circle, false);
             SetOn(r.Arc, false);
+            SetOn(r.Beacon, false);
         }
         foreach (var l in Links.Values) if (!l.Used) SetOn(l.Line, false);
     }
@@ -124,6 +127,9 @@ public static class DownedMarkers
             var ghost = r.Ghost;
             if (ghost == null || !r.InRun) continue;
             var spot = new Spot { Slot = r.Slot, Pos = ghost.transform.position };
+            // 1.4.1: a body that sank through the ground on its owner's machine (older builds) is drawn at our height.
+            if (local != null && spot.Pos.y < local.transform.position.y - 3f)
+                spot.Pos = new Vector3(spot.Pos.x, local.transform.position.y, spot.Pos.z);
             if (CoopLife.IsRemoteDown(r.Slot)) Down.Add(spot);
             else Living.Add(spot);
         }
@@ -165,6 +171,20 @@ public static class DownedMarkers
         SetOn(arc, true);
     }
 
+    private static void DrawBeacon(Ring ring, Vector3 center, float pulse)
+    {
+        var beam = ring.Beacon!;
+        beam.positionCount = 2;
+        beam.SetPosition(0, center + Vector3.up * GroundLift);
+        beam.SetPosition(1, center + Vector3.up * BeaconHeight);
+        var bottom = DownRed;
+        bottom.a = 0.35f + 0.5f * pulse;
+        var top = DownRed;
+        top.a = 0f;
+        Paint(beam, bottom, top);
+        SetOn(beam, true);
+    }
+
     private static void DrawLink(Spot down, Spot living)
     {
         if (down.Slot == living.Slot) return;
@@ -190,11 +210,12 @@ public static class DownedMarkers
 
     private static Ring RingFor(byte slot)
     {
-        if (Rings.TryGetValue(slot, out var r) && r.Circle != null && r.Arc != null) return r;
+        if (Rings.TryGetValue(slot, out var r) && r.Circle != null && r.Arc != null && r.Beacon != null) return r;
         r = new Ring
         {
             Circle = MakeLine($"Ring_{slot}", RingWidth, flat: true, loop: true),
             Arc = MakeLine($"Revive_{slot}", ProgressWidth, flat: true),
+            Beacon = MakeLine($"Beacon_{slot}", BeaconWidth, flat: false),
         };
         Rings[slot] = r;
         return r;

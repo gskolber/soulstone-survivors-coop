@@ -90,6 +90,7 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 | 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
 | — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
 | — | Skin de mod que só o parceiro tem; efeitos de ascensão de outro personagem que não estão carregados (as passivas agora carregam a árvore do dono) | — | `ascensao-notas.md`, `passivas-notas.md` |
+| — | Cristais giratórios do Machinist (`ResonatingCrystals-Skill`, `TemporaryRotatingSkill`) no parceiro: o `DoActivate` dá NRE no dublê e a réplica desiste depois de 3 recusas seguidas; provavelmente pelo caminho do `AlwaysOnSync` (escudos giratórios) | médio | `sempre-ligadas-notas.md` |
 | — | Progresso da área do Demon Hunter (e de outros mini-jogos com barra) para os outros jogadores: hoje só a pedra/área aparece | pequeno | `passivas-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)

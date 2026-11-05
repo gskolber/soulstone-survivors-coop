@@ -103,6 +103,8 @@ public static class CoopLife
         _enterPending = false;
         RunEnding = false;
         LeftAlone = false;
+        _gravityHeld = false; // a new scene's character starts with its own gravity
+        _sankLogged = false;
         Array.Clear(_downFromHost);
         Array.Clear(_progress);
         Array.Clear(_revivePendingTimer);
@@ -198,7 +200,7 @@ public static class CoopLife
                 _matchStarted = false;
             }
             if (_enterPending) { _enterPending = false; EnterDownedVisuals(); }
-            if (LocalDowned) UpdateSpectator();
+            if (LocalDowned) { UpdateSpectator(); HoldDownedBody(); }
             if (CoopRole.IsHostSide && Connected && InMatch) HostTick(dt);
             if (_pendingPortalTimer > 0f) RetryPendingPortal(dt);
             HostLostTick(dt);
@@ -233,25 +235,73 @@ public static class CoopLife
     {
         var local = GameState.LocalPlayerEntity;
         if (local == null) return;
+        // 1.4.1: no ragdoll any more. Its bones live outside the player object and fell through the ground of some
+        // maps (seen at y -5800), dragging the player's root with them every frame: every other player saw the body
+        // (and its markers) underground, and the revive got up down there. The body now stays where it went down:
+        // movement off, gravity off, no velocity; the ring, the pillar and "DOWN" mark it on every screen.
         bool ragdolled = false;
+        _downPos = local.transform.position;
         try
         {
-            var rag = local._ragdoll;
-            if (rag != null && !rag.ImmuneToRagdollEffect)
+            var ch = local._character;
+            if (ch != null)
             {
-                rag.SetToRagdoll(-1f, true);
-                ragdolled = rag.Ragdolled;
+                _origGravity = ch._gravity;
+                _gravityHeld = true;
+                ch._gravity = Vector3.zero;
+                ch.SetVelocity(Vector3.zero);
+                ch.SetMovementMode(MovementMode.None);
             }
         }
-        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] SetToRagdoll: {ex.Message}"); }
-        try { if (local._character != null) local._character.SetMovementMode(MovementMode.None); }
-        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] SetMovementMode(None): {ex.Message}"); }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Freezing the downed body: {ex.Message}"); }
         try { if (local._playerSkillAutoCast != null) local._playerSkillAutoCast.ForceStopAutoCasting = true; }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] ForceStopAutoCasting: {ex.Message}"); }
         if (CoopRole.IsHostSide) DropEnemiesTargeting(local);
         bool registered = EntityRegistry.TryGetEntity(local.Id, out var reg) && reg != null && reg.Pointer == local.Pointer;
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Local player DOWNED (hp={local._health.CurrentHealth:F0}, ragdoll={ragdolled}, stillRegistered={registered}).");
         if (CoopRole.IsHostSide) SendLife(force: true);
+    }
+
+    private static Vector3 _downPos;
+    private static Vector3 _origGravity;
+    private static bool _gravityHeld, _sankLogged;
+
+    /// <summary>1.4.1: while down the body stays where it went down (EnterDownedVisuals turns gravity and movement off).
+    /// If anything still moves it more than 1 u down, the character's own Teleport puts it back (a plain transform write
+    /// is overwritten by the movement code on the next physics step).</summary>
+    private static void HoldDownedBody()
+    {
+        var local = GameState.LocalPlayerEntity;
+        var ch = local != null ? local._character : null;
+        if (ch == null) return;
+        if (local!.transform.position.y > _downPos.y - 1f) return;
+        try
+        {
+            if (!_sankLogged) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Downed body moved down to y={local.transform.position.y:F1}: put back at {_downPos}.");
+            _sankLogged = true;
+            ch.SetVelocity(Vector3.zero);
+            ch.Teleport(_downPos);
+        }
+        catch (Exception ex) { if (!_sankLogged) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Holding the downed body: {ex.Message}"); _sankLogged = true; }
+    }
+
+    /// <summary>1.4.1: on revive, gravity back, and back on the ground if the body is below where it went down.</summary>
+    private static void ReleaseDownedBody(Entity local)
+    {
+        _sankLogged = false;
+        var ch = local._character;
+        if (ch == null) return;
+        try
+        {
+            if (_gravityHeld) { ch._gravity = _origGravity; _gravityHeld = false; }
+            ch.SetVelocity(Vector3.zero);
+            if (local.transform.position.y < _downPos.y - 1f)
+            {
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Revived below the ground (y={local.transform.position.y:F1}): teleported to {_downPos}.");
+                ch.Teleport(_downPos);
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Releasing the downed body: {ex.Message}"); }
     }
 
     /// <summary>Enemies already chasing us keep their target until RefreshTarget; we're unregistered, so drop it now.</summary>
@@ -297,10 +347,11 @@ public static class CoopLife
         }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][life] Revive (health/registry): {ex}"); }
 
+        ReleaseDownedBody(local);
         try
         {
             var rag = local._ragdoll;
-            if (rag != null && rag.Ragdolled) rag.SetToAnimator(); // get-up animation, then Walking + Ragdolled=false
+            if (rag != null && rag.Ragdolled) rag.SetToAnimator(); // (older downs) get-up animation, then Walking + Ragdolled=false
             else if (local._character != null) local._character.SetMovementMode(MovementMode.Walking);
         }
         catch (Exception ex)
@@ -406,6 +457,9 @@ public static class CoopLife
 
     private static void RestoreCamera()
     {
+        // 1.4.1: every way out of the downed state comes through here: gravity back (no-op unless it was held).
+        var me = GameState.LocalPlayerEntity;
+        if (_gravityHeld && me != null) ReleaseDownedBody(me);
         try
         {
             if (_cameraSwapped)
@@ -947,6 +1001,9 @@ public static class CoopLife
         var local = GameState.LocalPlayerEntity;
         var h = local != null ? local._health : null;
         if (local == null || h == null || !InMatch) return;
+        // 1.4.1: a second F9 while down bypassed the downed invulnerability and killed for real on this machine only
+        // (its run ended while the host still had it down): ignored now.
+        if (LocalDowned) { Plugin.StaticLog.LogInfo("[SoulstoneCoop][life] F9 ignored: already down."); return; }
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][life] F9: lethal hit on the local player.");
         h.InvulnerabilityTime = 0f;
         UnitUtil.ChangeEntityHealth(null!, local, -(h.CurrentHealth + 1e9f), false, out _, out _, out _);

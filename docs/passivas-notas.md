@@ -68,6 +68,18 @@ Em vez de tratar herói por herói, o dono manda o estado de cada parte do objet
 
 Log: `Layout (owner) '<nome>'` e `Layout (copy) '<nome>'` (partes, ligado/desligado, escala; até duas vezes por lado) e, na telemetria, `parts sent=N recv=N applied=N unmatched=N`.
 
+## Sonda `powers/` (diagnóstico, só log)
+
+`Summons/PowersProbe.cs`, desligável com `[Debug] PowersProbe = false`. Não manda nada nem muda o jogo. Serve para desenhar o espelhamento genérico (qualquer coisa que o herói local gera a partir de `Resources` `powers/`) e as barras de progresso a partir de dados reais:
+
+- `[probe] powers/ prefabs (N): ...`: os prefabs de mini-jogo do jogo;
+- `[probe] Pooled instance of '<nome>' ... registered`: instância criada pelo pool (`ResourcesUtil.PrefabIdByInstanceId`, lido 1×/s quando cresce, objeto por `Resources.InstanceIDToObject`);
+- `[probe] '<nome>' is live and NOT from the pool`: achada por `GameObject.Find("<nome>(Clone)")` a cada 3 s sem estar no pool;
+- `[probe] '<nome>' ON #n (pooled|NOT pooled) at ... parent ... root components [...] N parts: ...` e `off after Xs`;
+- `[probe] Material '<nome>' <renderer> (...): <propriedade> a -> b via material|property block after Xs`: primeira mudança de cada número/cor de shader (uma vez por prefab, renderer e propriedade, nos primeiros 90 s de cada ativação).
+
+Desligar antes de publicar (ou trocar o padrão para `false`).
+
 ## Como testar
 
 1. A joga de Legionnaire. Na tela de B aparecem os legionários caídos no mesmo lugar.
@@ -78,3 +90,7 @@ Log: `Layout (owner) '<nome>'` e `Layout (copy) '<nome>'` (partes, ligado/deslig
    - de B: na telemetria `[passives] ... built=N missing=0`;
    - um `No prefab for ...` indica um tipo cujo prefab não está carregado no outro jogo.
    - 1.4.1: `Loaded <Char>'s skill tree for slot N's objects` no jogo de quem vê, e depois `built=N` em vez de `missing`.
+
+## Tecla F2 (debug): mecânica do herói sem desbloquear
+
+`MechanicDebug.cs`, em qualquer janela, dentro de uma partida: carrega a árvore do personagem local (`skill-tree-survivors-character/<char>-skill-tree`) e aplica, pelo `SkillTreeItemSO.Apply(entity, 1)` do jogo, cada nó `SkillTree<X>SO` que adiciona `<X>Component` ao jogador (DemonicBinding, GhostShip, AncestralRitual, MachineSpirit, CursedShrine, ArcanePower, CallOfTheWild, ChaosEnergy, DivineInspiration, ElementalOverload, Rage, Reanimation, YinYang, Mechatron, MyrmidonFavor, NaturesGuardian, RoguePower, Concentration, CompanionHunger), menos os que o jogador já tem. Só nesta run, só nesta máquina; nada vai para o perfil. Log: `[debug] F2: applied '<nó>' (...): <X>Component present|NOT present after Apply`.
