@@ -96,9 +96,14 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 |---|---|---|---|
 | 1 | Reconexão quando o host trocou de estágio (portal) ou reiniciou durante a queda: hoje o convidado volta no estágio antigo | médio | `reentrada-notas.md` |
 | 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
-| — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
-| — | Skin de mod que só o parceiro tem; efeitos de ascensão de outro personagem que não estão carregados (as passivas agora carregam a árvore do dono) | — | `ascensao-notas.md`, `passivas-notas.md` |
+| — | Esquiva por dash nos hits que o host calcula no proxy: o dash do convidado aparece, mas o host calcula o hit no proxy, que não dá dash (só afeta convidados; mexe no balanceamento) | pequeno–médio | `pendencias-notas.md` |
+| — | XP ganho caído se perde se ninguém revive | pequeno | `fase4b-notas.md` |
 | — | Cristais giratórios do Machinist no parceiro: NRE mais adiante no `DoActivate` da réplica, depois do pool da projectile skill (`sempre-ligadas-notas.md`) | médio | `sempre-ligadas-notas.md` |
+
+## Limites por definição
+
+- Skin de mod do parceiro só aparece se você tem o mesmo mod (não há de onde carregar). Efeitos de ascensão de outro personagem: nenhum caso de `isn't loaded here` nos testes da 1.5/1.6.
+- Cristais giratórios do Machinist no parceiro: deixado como problema conhecido (item da tabela acima).
 
 ## Ainda não vistos em jogo (de fases anteriores)
 
