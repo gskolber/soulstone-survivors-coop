@@ -756,30 +756,42 @@ public static partial class PassiveObjectSync
     /// <summary>1.4.1: every character's mini-game prefabs (Resources "powers/": binding stone, shrines, torii gates,
     /// footprints, ghost ship, machine-spirit minerals...; about 26 assets). Loaded once, on the first object whose
     /// prefab isn't in memory, and kept referenced. True if it was loaded just now.</summary>
+    /// <summary>1.6.1: the heroes' own drops live under Resources "collectables/" next to the map's pickups (boss
+    /// loot, metals, gems, food, power-ups: not ours to mirror). These folders are hero mechanics and are handled like
+    /// powers/: Wukong's yin-yang orbs, the ghost ship's souls, elemental-overload orbs, divine-inspiration orbs and
+    /// shards, reanimation, Mechatron, the rogue power, Myrmidon's favor trident, the chaos orb.</summary>
+    private static readonly string[] HeroFolders =
+    {
+        "powers", "collectables/yinyang", "collectables/ghostship", "collectables/elementaloverload",
+        "collectables/divineinspiration", "collectables/reanimation", "collectables/mechatron",
+        "collectables/roguepower", "collectables/favortrident", "collectables/chaosorb",
+    };
+
     private static bool EnsurePowersLoaded()
     {
         if (_powersTried) return false;
         _powersTried = true;
-        try
+        int n = 0;
+        foreach (var folder in HeroFolders)
         {
-            var all = Resources.LoadAll("powers", Il2CppType.Of<UnityEngine.Object>()); // no untyped LoadAll in this interop
-            int n = all?.Length ?? 0;
-            for (int i = 0; i < n; i++)
+            try
             {
-                var o = all![i];
-                if (o == null) continue;
-                LoadedTrees.Add(o);
-                var go = o.TryCast<GameObject>();
-                if (go != null && !PowersByName.ContainsKey(go.name)) PowersByName[go.name] = go; // 1.5.0
+                var all = Resources.LoadAll(folder, Il2CppType.Of<UnityEngine.Object>()); // no untyped LoadAll in this interop
+                int k = all?.Length ?? 0;
+                n += k;
+                for (int i = 0; i < k; i++)
+                {
+                    var o = all![i];
+                    if (o == null) continue;
+                    LoadedTrees.Add(o);
+                    var go = o.TryCast<GameObject>();
+                    if (go != null && !PowersByName.ContainsKey(go.name)) PowersByName[go.name] = go; // 1.5.0
+                }
             }
-            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Loaded the mini-game prefabs ('powers/', {n} assets, {PowersByName.Count} prefabs).");
-            return n > 0;
+            catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Loading '{folder}/': {ex.Message}"); }
         }
-        catch (Exception ex)
-        {
-            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Loading 'powers/': {ex.Message}");
-            return false;
-        }
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Loaded the heroes' mini-game prefabs ({HeroFolders.Length} folders, {n} assets, {PowersByName.Count} prefabs).");
+        return n > 0;
     }
 
     private static readonly HashSet<string> TreeTried = new();

@@ -207,6 +207,7 @@ public static class PlayerSync
         byte slot = PacketRouter.From;
         if (!Players.IsPresent(slot)) return;
         if (on) DashesReceived++;
+        if (NetworkManager.Role == NetRole.Host) Enemies.RemoteProxy.OnClientDash(slot, on); // 1.6.1: dash dodge on the stand-in
         var events = MotionOf(slot).DashEvents;
         events.Add(new DashEvent { At = Time.unscaledTime + InterpDelay, On = on });
         if (events.Count > 16) events.RemoveAt(0);

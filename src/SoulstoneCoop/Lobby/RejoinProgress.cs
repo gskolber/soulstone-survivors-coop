@@ -31,8 +31,18 @@ public static class RejoinProgress
     private static float _timer;
     private static int _snapshots, _errors;
 
+    // 1.6.1: OFF. SetDataBasedOnPlayerEntity is the game's stage-transition step, not a read: it calls
+    // InventoryComponent.SaveMatchInventoryData (a profile write, PlayerDataUtil.BeginBulkWriteWithAutoFinish), hands the
+    // player's live InventoryData to the snapshot and gives the player a new empty one (0x4FF600, the InventoryData..ctor
+    // stored at InventoryComponent+0x20). Until 1.6.0 it threw on its first line (null list) and did nothing; once 1.6.0
+    // fixed that, a guest's inventory was reset and its profile written every 5 s, and its level-up panel broke
+    // (LevelUpPanelManager.SetupPopup NRE, cards never filled). A drop now reconnects into the same run without a reload
+    // (the build stays), so only "surrender, then Fight" comes back as a new character.
+    private static readonly bool SnapshotEnabled = false;
+
     public static void Tick(float dt)
     {
+        if (!SnapshotEnabled) return;
         if (!HostAllowsRejoin || NetworkManager.Role != NetRole.Client) return;
         _timer += dt;
         if (_timer < SnapshotInterval) return;

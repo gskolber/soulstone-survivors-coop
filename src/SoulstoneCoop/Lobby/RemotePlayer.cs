@@ -40,6 +40,9 @@ public sealed class RemotePlayer
     public bool InRun => Place == LobbyPlace.InRun;
     public bool ChangingScene => Place == LobbyPlace.Loading || Place == LobbyPlace.Transition;
 
+    /// <summary>1.6.1: when this player last started changing scene (Menu -> Loading/Transition), unscaled time.</summary>
+    public float ChangingSince = -1f;
+
     public string Name => Info.Known && Info.Name.Length > 0 ? Info.Name : FallbackName(Slot);
 
     /// <summary>"Host" / "Player 3" (local language) until that player's Hello brings its Steam name.</summary>

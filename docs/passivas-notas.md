@@ -120,3 +120,7 @@ Desligar antes de publicar (ou trocar o padrão para `false`).
 ## 1.6.0: prefabs descarregados entre partidas
 
 Na segunda partida da mesma sessão, todos os objetos do parceiro viraram marcador (`No prefab ... powers`): o jogo descarrega assets sem uso na troca de cena e os prefabs de `powers/` foram junto. `ReloadPowersIfStale` recarrega a pasta (e os ids de prefab do dono) quando algum sumiu, antes da varredura e antes de desistir para o marcador.
+
+## 1.6.1: drops dos heróis em `collectables/`
+
+Os orbes yin-yang do Wukong (`YinYangOrb : CollectableSecretObject`, `collectables/yinyang/yinyangblack_orb` e `yinyangwhite_orb`) não apareciam para o parceiro: não estão em `powers/` e o patch de `CollectableSecretObject` só espelha os cristais de mana/alma. As pastas de mecânica de herói em `collectables/` (yinyang, ghostship, elementaloverload, divineinspiration, reanimation, mechatron, roguepower, favortrident, chaosorb) agora são carregadas e varridas como `powers/` (`HeroFolders`). As do mapa (boss_loot, metal, gem, food, powerups, catapult_material) ficam de fora. Os orbes vêm do pool do jogo: a varredura do pool os acha.

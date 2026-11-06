@@ -74,3 +74,14 @@ B desistiu e voltou ao menu; o host mandou o `RunStart` de novo na hora (`slot 1
 - Host: `NoteInRun` vale também com o host carregando, e `NoteLeftRun` (InRun -> Menu na mesma conexão) marca o jogador: quem sai da run por vontade própria só volta com Lutar.
 - Cliente: um `RunStart` que chega com menos de 2 s de menu espera (`menu not settled yet - the RunStart waits` / `starting the held RunStart`), até 30 s.
 - O engasgo do host na saída de B vinha em parte desse reenvio (run + ressincronização de inimigos de novo).
+
+### 1.6.1: foto da build desligada
+
+O `SetDataBasedOnPlayerEntity` (0x4FF600) é a passagem de estágio do jogo, não uma leitura: chama `InventoryComponent.SaveMatchInventoryData` (grava no perfil, `PlayerDataUtil.BeginBulkWriteWithAutoFinish`), entrega o `InventoryData` vivo do jogador à foto e dá ao jogador um `InventoryData` novo e vazio (InventoryComponent+0x20). Até a 1.6.0 ele dava NRE na primeira linha e não fazia nada; com a correção da 1.6.0 o convidado tinha o inventário zerado e o perfil gravado a cada 5 s, e o painel de nível quebrou (`LevelUpPanelManager.SetupPopup` NRE, cartas "Behemoth Behemoth" sem preencher, sem como subir de nível). `RejoinProgress.SnapshotEnabled = false`.
+
+Sem perda prática: uma queda reconecta na mesma run sem recarregar (a build fica). Só "Desistir e depois Lutar" volta como personagem novo. Uma foto sem efeitos colaterais pediria montar o `GameModeBaseData` à mão a partir dos componentes (nível, XP, power-ups, runas, inventário).
+
+### 1.6.1: o host não pausa mais por causa do convidado
+
+- **Barreira de carregamento:** o host congelou 41 s enquanto B voltava com Lutar (`Others still loading - holding our match`). A barreira agora só espera quem começou a carregar antes da partida do host começar (`CoopSession.AnyRemoteLoadingWithUs`, `RemotePlayer.ChangingSince`): começo de run, portal, reinício. Quem entra depois carrega sozinho.
+- **Painel de nível:** com B fora da run (desistiu) ou caído da conexão, o host voltava à pausa do solo com o painel aberto (`Policy changed ... -> pause (solo)`). `LevelUpPolicy` mantém as regras do co-op enquanto houver parceiro conectado (na run ou no menu) e por 60 s depois da última queda.

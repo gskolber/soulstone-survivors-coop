@@ -595,7 +595,7 @@ public static class RunSync
         get
         {
             // Never in our own old scene during a portal/Restart: LoadNextStageAfterDelay waits on scaled time.
-            bool hold = CoopSession.LocalInRun && !CoopSession.StageTransition && CoopSession.AnyRemoteChangingScene
+            bool hold = CoopSession.LocalInRun && !CoopSession.StageTransition && CoopSession.AnyRemoteLoadingWithUs
                         && Time.unscaledTime - CoopSession.LocalRunStartTime < HoldTimeout;
             if (hold != _holding)
             {

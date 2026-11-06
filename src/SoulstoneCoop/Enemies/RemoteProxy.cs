@@ -46,6 +46,7 @@ public static class RemoteProxy
         public Entity? Entity;
         public IntPtr Ptr;
         public ModifiedCharacter? Character;
+        public bool DashApplied; // 1.6.1: our _isDashing is on this stand-in's character
         public RemotePlayerState? State;
         public bool AppliedDead;
         public float RetryTimer;
@@ -300,6 +301,7 @@ public static class RemoteProxy
                 else if (haveRemote)
                 {
                     MoveProxy(p, pos, rot);
+                    ApplyDash(p);
                 }
                 else if (r.Ghost == null)
                 {
@@ -332,7 +334,7 @@ public static class RemoteProxy
                 Plugin.StaticLog.LogInfo(
                     $"[SoulstoneCoop][proxy] Host: [{string.Join(" | ", parts)}] " +
                     $"hostHits={_hostHits} hostDmg={_hostDamage:F0} spawnRedirects={_spawnRedirects}/{_spawnCalls} " +
-                    $"recyclerProtected={_recyclerProtected} seekerRetargets={_seekerRetargets} hostDown={Life.CoopLife.LocalDowned} " +
+                    $"recyclerProtected={_recyclerProtected} seekerRetargets={_seekerRetargets} dashWindows={TakeDashWindows()} hostDown={Life.CoopLife.LocalDowned} " +
                     $"sweepRecycled={_sweepRecycled} spawnNotHostRef={_spawnSkippedFar} maxHit={_maxHit:F0} by {_maxHitBy}");
             }
             _hostHits = _spawnRedirects = _spawnCalls = _recyclerProtected = _seekerRetargets = 0;
@@ -425,6 +427,55 @@ public static class RemoteProxy
             }
         }
     }
+
+    // ---------------- 1.6.1: dash dodge (docs/pendencias-notas.md) ----------------
+    // The game's dodge: Skill.GetSkillEffectModifierForTarget (0x5650B0) copies the target's ModifiedCharacter
+    // _isDashing (+0x12C) into the result's IsDashDodged when the target Entity has a character (+0x260/+0x268), so a
+    // dashing player isn't hit by skills (damage over time from statuses doesn't go through it). Enemy skills hit the
+    // guest's stand-in here on the host, which never dashed: guests couldn't dodge. Now, while that guest's DashState
+    // says it's dashing (applied on arrival, capped at MaxDashSeconds in case the stop is lost), the stand-in's
+    // character reports dashing, with its remaining duration kept up so the game's own dash update doesn't stop it.
+
+    private const float MaxDashSeconds = 0.6f;
+    private static readonly Dictionary<byte, (bool On, float Since)> ClientDash = new();
+    private static int _dashWindows, _dashErrors;
+
+    /// <summary>Host: a client's DashState (PlayerSync), on arrival.</summary>
+    internal static void OnClientDash(byte slot, bool on)
+    {
+        ClientDash[slot] = (on, Time.unscaledTime);
+        if (on) _dashWindows++;
+    }
+
+    private static void ApplyDash(Proxy p)
+    {
+        var ch = p.Character;
+        if (ch == null) return;
+        bool want = ClientDash.TryGetValue(p.Slot, out var d) && d.On && Time.unscaledTime - d.Since < MaxDashSeconds
+                    && !(p.State.HasValue && p.State.Value.Dead);
+        try
+        {
+            if (want)
+            {
+                if (!ch._isDashing) ch._isDashing = true;
+                if (ch._dashRemainingDuration < 0.1f) ch._dashRemainingDuration = 0.1f;
+                p.DashApplied = true;
+            }
+            else if (p.DashApplied)
+            {
+                ch._isDashing = false;
+                ch._dashRemainingDuration = 0f;
+                p.DashApplied = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_dashErrors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][proxy] Dash on stand-in {p.Slot}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Telemetry: dash windows received since the last call.</summary>
+    internal static int TakeDashWindows() { int n = _dashWindows; _dashWindows = 0; return n; }
 
     private static void MoveProxy(Proxy p, Vector3 pos, Quaternion rot)
     {

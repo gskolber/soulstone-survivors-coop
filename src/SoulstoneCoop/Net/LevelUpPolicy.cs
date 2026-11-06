@@ -23,6 +23,8 @@ public static class LevelUpPolicy
     internal static ConfigEntry<bool> FullPanel = null!;
 
     private static bool _open, _skip, _overlay, _coop;
+    private const float PeerGraceSeconds = 60f;
+    private static float _lastPeerAt = -1f;
     private static float _openedAt;
     private static int _queueAtOpen;
     // Session telemetry (reset with the run).
@@ -51,8 +53,13 @@ public static class LevelUpPolicy
     /// <summary>This frame's decision for an open popup: skip the pause (in co-op, always)? and as the overlay?</summary>
     internal static bool Decide(out bool overlay, out bool coop)
     {
-        coop = (NetworkManager.HasPeer && Lobby.CoopSession.LocalInRun && Lobby.CoopSession.AnyRemoteInRun)
-               || Ui.LevelUpShot.ForceCoop; // debug screenshots (--coop-ui-shot-levelup)
+        // 1.6.1: co-op rules (no pause) while any partner is connected, in the run or not (one in the menu can rejoin
+        // any moment), and for PeerGraceSeconds after the last one dropped (its auto-reconnect is likely on the way).
+        // Before, a partner leaving the run (surrender) or dropping switched the host to the solo pause mid-popup.
+        float now = UnityEngine.Time.unscaledTime;
+        if (NetworkManager.HasPeer) _lastPeerAt = now;
+        bool partner = NetworkManager.HasPeer || (_lastPeerAt > 0f && now - _lastPeerAt < PeerGraceSeconds);
+        coop = (partner && Lobby.CoopSession.LocalInRun) || Ui.LevelUpShot.ForceCoop; // debug screenshots (--coop-ui-shot-levelup)
         overlay = coop && !FullPanel.Value;
         return coop;
     }
