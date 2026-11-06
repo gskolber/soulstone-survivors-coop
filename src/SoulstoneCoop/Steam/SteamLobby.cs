@@ -262,6 +262,22 @@ internal static unsafe class SteamLobby
             return;
         }
 
+        JoinNow(lobby);
+    }
+
+    /// <summary>1.6.0: a dropped client getting back to its host (NetworkManager's auto-reconnect), even mid-run:
+    /// still in that lobby -> straight to the host; else back into the lobby first (the host only takes members).</summary>
+    internal static void ReconnectTo(ulong lobby, ulong host)
+    {
+        if (!_ready || lobby == 0) return;
+        if (State == LobbyState.Joining && _joining == lobby) return; // the last attempt's join is still on its way
+        if (InLobby && LobbyId == lobby && host != 0) { NetworkManager.StartSteamClient(lobby, host); return; }
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][steam] Reconnect: joining lobby {lobby} again.");
+        JoinNow(lobby);
+    }
+
+    private static void JoinNow(ulong lobby)
+    {
         LastError = null;
         LeaveSilently();
         NetworkManager.Stop();

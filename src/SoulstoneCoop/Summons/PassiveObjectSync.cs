@@ -64,6 +64,9 @@ public static partial class PassiveObjectSync
         public List<MatWatch>? Mats;
         public float MatsAt = -99f;
         public readonly Dictionary<ulong, Vector4> SentMats = new();
+        // 1.6.0 animator states (PassiveObjectSync.Generic.cs)
+        public List<(Animator A, uint PathHash)>? Anims;
+        public readonly Dictionary<ulong, int> SentAnims = new();
     }
 
     private struct PartState
@@ -114,7 +117,7 @@ public static partial class PassiveObjectSync
         if (_nextId == 0) _nextId = 1;
         var o = new Owned { Id = id, Type = type, Name = name, Comp = comp, Ptr = comp.Pointer };
         Own[o.Ptr] = o;
-        if (NetworkManager.HasPeer) { SendSpawn(o); SendParts(o, full: true); SendMaterials(o, full: true); }
+        if (NetworkManager.HasPeer) { SendSpawn(o); SendParts(o, full: true); SendMaterials(o, full: true); SendAnims(o, full: true); }
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][passives] Own {TypeName(type)} #{id} '{name}' at {comp.transform.position}.");
     }
 
@@ -199,6 +202,7 @@ public static partial class PassiveObjectSync
             foreach (var o in Own.Values) SendSpawn(o);
             foreach (var o in Own.Values) SendParts(o, full: true);
             foreach (var o in Own.Values) SendMaterials(o, full: true);
+            foreach (var o in Own.Values) SendAnims(o, full: true);
             return;
         }
 
@@ -208,6 +212,7 @@ public static partial class PassiveObjectSync
             _partsTimer = 0f;
             foreach (var o in Own.Values) SendParts(o, full: false);
             foreach (var o in Own.Values) SendMaterials(o, full: false);
+            foreach (var o in Own.Values) SendAnims(o, full: false);
         }
 
         _stateTimer += dt;
@@ -429,6 +434,9 @@ public static partial class PassiveObjectSync
         // 1.5.0 material values: latest per (renderer path hash, property name hash); the copy's renderers by path hash
         public readonly Dictionary<ulong, MatValue> MatStates = new();
         public Dictionary<uint, Renderer>? RendererMap;
+        // 1.6.0 animator states: latest per (animator path hash, layer); the copy's animators by path hash
+        public readonly Dictionary<ulong, AnimValue> AnimStates = new();
+        public Dictionary<uint, Animator>? AnimatorMap;
     }
 
     private static readonly Dictionary<int, Mirror> Remote = new();
@@ -537,7 +545,7 @@ public static partial class PassiveObjectSync
         // Load the owner's tree from Resources once (the objects are referenced from its talents) and look again.
         // 1.4.1 (second test): the mini-game objects themselves live under Resources "powers/" (the binding stone is
         // powers/demonicbinding/demonicbindingstone, loaded by path when the mechanic starts): load that folder once.
-        if (template == null && EnsurePowersLoaded())
+        if (template == null && (EnsurePowersLoaded() || ReloadPowersIfStale()))
             template = ResolveTemplate(m.Type, m.Name, force: true);
         if (template == null && EnsureOwnerTreeLoaded(m.Slot))
             template = ResolveTemplate(m.Type, m.Name, force: true);

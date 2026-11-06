@@ -86,6 +86,10 @@ Em A, F2 em cada herói e use a mecânica; olhe em B:
 4. **Xamã:** a pira e a chama.
 5. **Logs:** em A, `[passives] Own powers #N '<nome>'`; em B, `built=N` e `mats ... applied=N` com `unmatched` baixo. Nenhum objeto duplicado (uma cópia de cópia apareceria como `Own powers` em B).
 
+## 1.6.0: animações dos objetos (`PassiveAnims = 149`)
+
+O imediato cavando, o baú abrindo e os ritualistas dançando têm `Animator` próprio, movido pelo script, que a cópia não roda. O dono manda, por animator (hash do caminho, até 8) e camada (até 3), o `fullPathHash` do estado atual, o tempo normalizado e a `speed`, quando o estado muda e tudo a cada 3 s. A cópia (o `StripToVisualOnly` mantém o `Animator`) faz `Play` do estado se ainda não estiver nele (`HasState` antes). Telemetria: `anims sent/recv/applied/unmatched`.
+
 ## Sonda `powers/` (diagnóstico, só log)
 
 `Summons/PowersProbe.cs`, ligada com `[Debug] PowersProbe = true` (desligada por padrão desde a 1.5.0). Não manda nada nem muda o jogo. Serve para desenhar o espelhamento genérico (qualquer coisa que o herói local gera a partir de `Resources` `powers/`) e as barras de progresso a partir de dados reais:
@@ -112,3 +116,7 @@ Desligar antes de publicar (ou trocar o padrão para `false`).
 ## Tecla F2 (debug): mecânica do herói sem desbloquear
 
 `MechanicDebug.cs`, em qualquer janela, dentro de uma partida: carrega a árvore do personagem local (`skill-tree-survivors-character/<char>-skill-tree`) e aplica, pelo `SkillTreeItemSO.Apply(entity, 1)` do jogo, cada nó `SkillTree<X>SO` que adiciona `<X>Component` ao jogador (DemonicBinding, GhostShip, AncestralRitual, MachineSpirit, CursedShrine, ArcanePower, CallOfTheWild, ChaosEnergy, DivineInspiration, ElementalOverload, Rage, Reanimation, YinYang, Mechatron, MyrmidonFavor, NaturesGuardian, RoguePower, Concentration, CompanionHunger), menos os que o jogador já tem. Só nesta run, só nesta máquina; nada vai para o perfil. Log: `[debug] F2: applied '<nó>' (...): <X>Component present|NOT present after Apply`.
+
+## 1.6.0: prefabs descarregados entre partidas
+
+Na segunda partida da mesma sessão, todos os objetos do parceiro viraram marcador (`No prefab ... powers`): o jogo descarrega assets sem uso na troca de cena e os prefabs de `powers/` foram junto. `ReloadPowersIfStale` recarrega a pasta (e os ids de prefab do dono) quando algum sumiu, antes da varredura e antes de desistir para o marcador.

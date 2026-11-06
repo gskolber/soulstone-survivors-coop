@@ -206,6 +206,7 @@ public static class CoopLife
             HostLostTick(dt);
             FeedbackTick(dt);
             DownedMarkers.Tick(Connected && InMatch && !RunEnding);
+            DownedPose.Tick(Connected && InMatch && !RunEnding); // 1.6.0: lying on the ground on every screen
             HandleHotkeys();
         }
         catch (Exception ex)
@@ -909,6 +910,7 @@ public static class CoopLife
     private static bool _hostLost;
     private static float _hostLostTimer;
     private static bool _hostLostWaitingLogged;
+    private static float _reconnectNoticeTimer;
 
     private static void BeginHostLost()
     {
@@ -957,6 +959,20 @@ public static class CoopLife
         {
             _hostLost = false;
             Lobby.CoopSession.Notice(Ui.Loc.Msg("nt.host_left_portal"), 10f);
+            return;
+        }
+        // 1.6.0: while NetworkManager tries to get back to the host, the run goes on and nothing ends; back in, the
+        // host's resync (LobbyState InRun) rebuilds the enemies and the partners here, no reload. Only when the
+        // reconnect window runs out does the usual end follow.
+        if (NetworkManager.Reconnecting)
+        {
+            _hostLostTimer = 0f;
+            _reconnectNoticeTimer -= dt;
+            if (_reconnectNoticeTimer <= 0f)
+            {
+                _reconnectNoticeTimer = 5f;
+                Lobby.CoopSession.Notice(Ui.Loc.Msg("nt.reconnecting", ("s", Mathf.CeilToInt(NetworkManager.ReconnectSecondsLeft))), 5.5f);
+            }
             return;
         }
         _hostLostTimer += dt;

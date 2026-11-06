@@ -70,7 +70,11 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
 | Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
 | Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
-| **1.5.0** | Espelhamento genérico das mecânicas de todos os heróis (`passivas-notas.md`, "1.5.0") | — |
+| **1.6.0** | Volta à partida, animações dos objetos, cristais do Machinist, caído deitado | — |
+| Reentrada | `AllowRejoin` ligado por padrão; Lutar no menu pede para entrar na run do host (`RunJoinRequest = 34`); reconexão automática de 45 s sem recarregar (`reentrada-notas.md`) | — |
+| Passivas | Estados de `Animator` dos objetos de mecânica (`PassiveAnims = 149`) (`passivas-notas.md`) | — |
+| Caído | Corpo deitado de costas em todas as telas (`caido-marcadores-notas.md`) | — |
+| **1.5.0** | Espelhamento genérico das mecânicas de todos os heróis (`passivas-notas.md`, "1.5.0") (`a99e610`) | — |
 | Passivas | Objetos de `Resources` `powers/` achados por varredura (raízes da cena + pool), tipo `255` com o nome do prefab; valores animados de material (`PassiveMaterials = 148`): barras, dissolves, fades | — |
 | **1.4.1** | Correções do teste da 1.4.0 (`fa31e86`, `abaf7bf`) | — |
 | Morte | Agente que anda mira ≥ 1 u à frente, sem `StopMovement`, `stoppingDistance` 0, sem freio e na velocidade medida do host; limiar de movimento 0,6 → 0,2 u/s (`inimigos-olhar-notas.md`) | — |
@@ -80,7 +84,7 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 
 ## Agora
 
-A **1.5.0** (espelhamento genérico) foi testada em um PC com Demon Hunter, Machinist, Pirata e Xamã (F2): objetos, partes e barras chegam ao outro jogador, sem erros. A sonda `[Debug] PowersProbe` vem desligada. Antes de publicar com `tools\release.ps1`: a partida pela Steam com um amigo (`teste-1.3.0.md` mais o roteiro 1.5.0 de `passivas-notas.md`).
+A **1.6.0** ainda não foi compilada nem testada (roteiros em `reentrada-notas.md`, `passivas-notas.md`, `sempre-ligadas-notas.md`, `caido-marcadores-notas.md`). A 1.5.0 (`a99e610`) foi testada em um PC com Demon Hunter, Machinist, Pirata e Xamã e numa partida com um amigo pela Steam. Antes de publicar com `tools\release.ps1`: mais uma partida pela Steam.
 
 A **1.4.0** está com commit (`869a4fa`); a **1.4.1** (olhar dos inimigos em movimento e a área do Demon Hunter para os outros) ainda não, e nenhuma das duas foi compilada. Ascensão (modelo, acréscimo, legionários e efeitos), inimigos virados para o convidado e marcadores de caído já foram vistos funcionando no teste em um PC. A reentrada não foi testada. Próxima rodada: `tools\test-local.cmd` com os roteiros de `passivas-notas.md` e `inimigos-olhar-notas.md`; depois a partida pela Steam com um amigo (`teste-1.3.0.md`) e `tools\release.ps1`.
 
@@ -94,7 +98,7 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 | 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
 | — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
 | — | Skin de mod que só o parceiro tem; efeitos de ascensão de outro personagem que não estão carregados (as passivas agora carregam a árvore do dono) | — | `ascensao-notas.md`, `passivas-notas.md` |
-| — | Cristais giratórios do Machinist (`ResonatingCrystals-Skill`, `TemporaryRotatingSkill`) no parceiro: o `DoActivate` dá NRE no dublê e a réplica desiste depois de 3 recusas seguidas; provavelmente pelo caminho do `AlwaysOnSync` (escudos giratórios) | médio | `sempre-ligadas-notas.md` |
+| — | Cristais giratórios do Machinist no parceiro: NRE mais adiante no `DoActivate` da réplica, depois do pool da projectile skill (`sempre-ligadas-notas.md`) | médio | `sempre-ligadas-notas.md` |
 | — | Progresso da área do Demon Hunter (e de outros mini-jogos com barra) para os outros jogadores: hoje só a pedra/área aparece | pequeno | `passivas-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)

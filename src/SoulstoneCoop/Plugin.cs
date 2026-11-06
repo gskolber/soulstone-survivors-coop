@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.5.0";
+    public const string PluginVersion = "1.6.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -52,8 +52,8 @@ public class Plugin : BasePlugin
             "Test only: random +- variation in ms on top of SimulateLatencyMs. 0 = off.");
         var simLoss = Config.Bind("Debug", "SimulatePacketLossPercent", 0,
             "Test only: percent of packets lost (0-50). Reliable messages are resent, so they arrive late instead. 0 = off.");
-        AllowRejoin = Config.Bind("Coop", "AllowRejoin", false,
-            "Host only, experimental: a partner who connects while you are in a run is brought into it; one who dropped out of this run comes back with the level, upgrades and items they had (a newcomer starts as a new character). Off = they wait in the menu.");
+        AllowRejoin = Config.Bind("Coop", "AllowRejoin", true, // 1.6.0: on by default
+            "Host only: a partner who connects (or presses Fight in the menu) while you are in a run is brought into it; one who dropped out of this run comes back with the level, upgrades and items they had (a newcomer starts as a new character). A partner whose connection drops mid-run reconnects by itself for 45 s and carries on. Off = they wait in the menu.");
         EndRunWhenHostLeaves = Config.Bind("Coop", "EndRunWhenHostLeaves", true,
             "Client: when the host disconnects mid-run, end the run (surrender) a few seconds later instead of staying in an empty map.");
         SenderClock = Config.Bind("Coop", "SenderClock", false,

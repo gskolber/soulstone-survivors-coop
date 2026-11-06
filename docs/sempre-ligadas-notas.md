@@ -31,3 +31,15 @@ O `RotatingShieldSkill` não tem `DoActivate` e nunca passa pelo `CastSkill`. É
 `tools\test-local.cmd`. Num dos dois, pegue um escudo giratório nos upgrades (ou um personagem que comece com um).
 - O outro vê os escudos girando em volta do fantasma, sem dar dano.
 - Somem quando aquele jogador cai e voltam quando revive.
+
+## 1.6.0: cristais do Machinist (`TemporaryRotatingSkill`)
+
+`ResonatingCrystals-Skill` dava NRE no `DoActivate` (0x56A5B0) da réplica: ele faz `CrossFade` do `AnimationTrait` (+0x268) no `CasterAnimator` (+0x130) da skill e lança se há trait e não há animator; o dublê não tem `AnimatorComponent`. Na criação da cópia (`GetOrCreateCopy`), um `TemporaryRotatingSkill` sem `CasterAnimator` perde o trait (a animação do fantasma vem do `PlayGhostAnimation`). Depois de um cast aceito, o `OnUpdate` da cópia roda todo frame por `ProjectileSkillDuration + 1 s` (2 a 60 s) no mesmo laço das sempre-ligadas, porque as cópias não são `AddSkill`'adas. Endereços achados com `MethodAddressToToken.db` do interop + objdump.
+
+### Primeiro teste da 1.6.0
+
+Ainda NRE no `DoActivate`, e a linha "animation trait dropped" não apareceu: o trait/animator não era o nulo. O `DoActivate` testa +0x90, +0xE0, +0x130, +0x258, +0x260, +0x268 e +0x288 antes da primeira chamada. `Skills/FieldDump.cs` loga, pelo offset real de cada campo (`il2cpp_field_get_offset` dos `NativeFieldInfoPtr_` do interop), quais desses estão nulos: na cópia (`Fields of copy 'ResonatingCrystals-Skill' (slot N)`) e na instância do próprio Machinist no primeiro cast (`Fields of local 'ResonatingCrystals-Skill'`). O campo que está `set` no dono e `NULL` na cópia é o que falta preencher.
+
+### Segundo teste da 1.6.0
+
+`Fields of copy` e `Fields of local`: os seis campos testados no começo do `DoActivate` estão `set` nos dois lados (o +0x130 não tem campo com nome no interop). O NRE é mais adiante: depois do `GetPrefabInstance` do placeholder e da projectile skill (testes em `[rbp+0x70]`, `[rbp+0x88]`, `[instância+0x90]` antes do `Skill.Setup`). Próximo passo: comparar o estado das instâncias do pool da `ResonatingCrystals-Projectile` na réplica e no dono (o `FillPools(3)` da cópia pode não preparar como o do jogo), ou espelhar os cristais pelo objeto (placeholders girando) em vez de rodar a skill. Item próprio no roadmap.

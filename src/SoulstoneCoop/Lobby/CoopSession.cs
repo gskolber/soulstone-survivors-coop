@@ -353,6 +353,7 @@ public static class CoopSession
         }
 
         RunSync.HostRejoinTick(); // phase 8, AllowRejoin only
+        RunSync.ClientRunTick();  // 1.6.0: a RunStart held until the menu has settled
     }
 
     private static void SendPlace(bool force)
@@ -445,6 +446,7 @@ public static class CoopSession
         // PeerConnected, when the connection was made inside the run). Duplicates are ignored by the client.
         // Not while our own old scene is still up (portal taken): those enemies are about to be gone.
         if (place == LobbyPlace.InRun) RunSync.NoteInRun(p.Slot);
+        if (prev == LobbyPlace.InRun && place == LobbyPlace.Menu) RunSync.NoteLeftRun(p.Slot); // 1.6.0: no auto pull-back
         if (place == LobbyPlace.InRun && LocalInRun && !StageTransition && NetworkManager.Role == NetRole.Host)
         {
             Enemies.HostEnemySync.ResyncToPeer(p.Slot, "player entered the run");

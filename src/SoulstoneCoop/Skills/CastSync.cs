@@ -236,6 +236,8 @@ public static class CastSync
 
         if (LoggedKeys.Add(key))
         {
+            var rot = skill.TryCast<TemporaryRotatingSkill>(); // 1.6.0: compared with the replica's (FieldDump)
+            if (rot != null) FieldDump.Log(rot, $"local '{key}'", FieldDump.RotatingOffsets);
             Plugin.StaticLog.LogInfo(
                 $"[SoulstoneCoop][casts] First local cast of '{key}' ({skill.GetIl2CppType().Name}, type={type}, level={m.Level}, " +
                 $"counts={m.CountA}/{m.CountB}, scale={m.Scale:F2}, flags={m.Flags}, target={m.TargetKind}).");

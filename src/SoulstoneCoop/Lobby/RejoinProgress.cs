@@ -47,6 +47,7 @@ public static class RejoinProgress
             int endless = 0;
             try { var current = GameManagerUtil.BaseGameData; if (current != null) endless = current.GetEndlessLevel(); } catch { }
             var data = new GameModeBaseData();
+            InitCollections(data); // 1.6.0: the plain constructor leaves them null; SetDataBasedOnPlayerEntity Clear()s them
             data.SetDataBasedOnPlayerEntity(local, endless);
             bool first = _saved == null || _savedRunId != CurrentRunId;
             _saved = data;
@@ -54,13 +55,39 @@ public static class RejoinProgress
             _savedLevel = data.CurrentLevel;
             _savedAt = Time.unscaledTime;
             _snapshots++;
-            if (first) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][rejoin] Client: keeping this run's build for a rejoin (run {CurrentRunId}, level {_savedLevel}, every {SnapshotInterval:F0} s).");
+            if (first) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][rejoin] Client: keeping this run's build for a rejoin (run {CurrentRunId}, level {_savedLevel}, every {SnapshotInterval:F0} s; {_inits} empty collections created).");
         }
         catch (Exception ex)
         {
             if (_errors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][rejoin] Client: snapshot of our build: {ex.Message}");
         }
     }
+
+    /// <summary>1.6.0: SetDataBasedOnPlayerEntity (0x4FF600) starts by Clear()ing a list of the data (+0x30) and fills the
+    /// others, so on a fresh GameModeBaseData (whose plain constructor leaves them null: the game gets its instance
+    /// elsewhere) it threw a NullReferenceException on every snapshot and no build was ever kept. Every null List /
+    /// Dictionary / HashSet property gets a new empty one.</summary>
+    private static void InitCollections(GameModeBaseData data)
+    {
+        foreach (var prop in typeof(GameModeBaseData).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            if (!prop.CanRead || !prop.CanWrite) continue;
+            var t = prop.PropertyType;
+            if (!t.IsGenericType) continue;
+            var def = t.GetGenericTypeDefinition();
+            if (def != typeof(Il2CppSystem.Collections.Generic.List<>) && def != typeof(Il2CppSystem.Collections.Generic.Dictionary<,>)
+                && def != typeof(Il2CppSystem.Collections.Generic.HashSet<>)) continue;
+            try
+            {
+                if (prop.GetValue(data) != null) continue;
+                prop.SetValue(data, Activator.CreateInstance(t));
+                _inits++;
+            }
+            catch (Exception ex) { if (_errors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][rejoin] New {prop.Name}: {ex.Message}"); }
+        }
+    }
+
+    private static int _inits;
 
     /// <summary>Client, the host's RunStart is about to load its scene: our build for that run, if we have one.</summary>
     internal static void BeforeClientRunLoad(int runId, bool hostAllowsRejoin, List<string>? hostAffixes)

@@ -40,3 +40,8 @@ No teste do Pirata, o corpo de B (caído, em ragdoll) afundou no chão na máqui
 1. Caia com B longe de A (ou F9 em A para o host): o pilar e a linha aparecem nas duas telas, no chão.
 2. Fique caído uns 30 s: o pilar não some. Se aparecer `Downed body sank`, a trava agiu.
 3. Reviva: o jogador levanta normalmente.
+
+## 1.6.0: deitado no chão
+
+`Life/DownedPose.cs`: com o ragdoll fora (1.4.1), o corpo ficava de pé. Agora, enquanto caído, o transform que tem o `Animator` do modelo (o nosso por `ModifiedCharacter.GetAnimator`, o do parceiro por `RemotePlayer.ModelAnimator`) gira -90° em X (de costas), sobe 0,3 u e a animação congela (`speed` 0). Reaplicado todo frame, desfeito exatamente no revive ou quando o jogador sai. Só visual.
+

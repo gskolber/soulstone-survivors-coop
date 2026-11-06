@@ -45,3 +45,32 @@ O `Start` da cena faz o resto, como entre fases do Endless. Qualquer outra run (
 6. Esperado no B: `[rejoin] Client: rejoining run N with our build (level L, ...)`, o aviso na tela e o personagem com o nível, as skills e os itens de antes.
 7. Confira os afixos (`run affixes match the host's`) e se o XP para o próximo nível está certo.
 8. Se o personagem voltar novo mesmo com a linha do passo 6, o `Start` não usou o `InitialEndlessData` nesse modo: mande o log.
+
+## 1.6.0: voltar à partida (reconexão automática e Lutar no menu)
+
+Teste com amigo pela Steam: o convidado se rendeu (pausa, Desistir), voltou ao menu ainda conectado e não conseguia mais entrar: `AllowRejoin` vinha desligado e, mesmo ligado, a reentrada só acontecia ao conectar.
+
+- **`AllowRejoin` ligado por padrão.** (Configs antigas guardam `false`: mudar à mão.) Com ele o lobby da Steam fica aberto durante a run.
+- **Lutar no menu (`RunJoinRequest = 34`):** convidado no menu, host numa run: o `AllowFight` do cliente pede para entrar (no máximo a cada 3 s) e mostra `nt.join_asked`. O host (`RunSync.OnJoinRequest`) esquece que já mandou a run para aquele slot e o `HostRejoinTick` manda o `RunStart` de novo; mesma run = build de volta (`RejoinProgress`). Com `AllowRejoin` desligado, o host vê `nt.join_wanted`.
+- **Reconexão automática (`NetworkManager`):** conexão estabelecida que cai (não recusa, não o botão Desconectar) arma 45 s de tentativas a cada 6 s, no mesmo IP ou no mesmo lobby/host da Steam (`SteamLobby.ReconnectTo`, que entra de novo no lobby mesmo no meio da run: o host só aceita membros). Só ações do jogador cancelam (`CancelReconnect`: Desconectar, Entrar, Hospedar, Convidar).
+- **Sem recarregar:** enquanto reconecta, `CoopLife.HostLostTick` não encerra a run (aviso `nt.reconnecting` com os segundos). De volta, o Hello/LobbyState InRun faz o host reenviar inimigos, baús e objetos (`ResyncToPeer`) e recriar fantasma e proxy; as marionetes antigas já tinham sido apagadas na queda. Se a janela acabar, a run termina como antes.
+- **Limite conhecido:** se o host trocou de estágio (portal) ou reiniciou enquanto o convidado estava fora, o convidado volta na run antiga.
+
+### Como testar
+
+1. **Lutar no menu:** em B, pausa, Desistir; no menu, Lutar: B volta para a run de A com a build (`Host: B asked to join the run`).
+2. **Queda no meio da run:** aperte **F1** na janela B (debug: derruba a conexão como uma falha de rede). B mostra "reconectando (Xs)" e continua jogando; em alguns segundos volta à mesma run sem recarregar, com inimigos e parceiro de novo (`Reconnected to the host (attempt N)` em B, `Host: resync to slot 1` em A).
+3. **Pela Steam:** o mesmo com um amigo (a queda real: desligar o Wi-Fi alguns segundos).
+
+### Primeiro teste da 1.6.0
+
+- Reconexão (F1) e Lutar no menu funcionaram.
+- A foto da build nunca tinha funcionado: `GameModeBaseData.SetDataBasedOnPlayerEntity` (0x4FF600) dá `Clear()` numa lista do objeto (+0x30) e o construtor simples a deixa nula (NRE a cada 5 s, `snapshot of our build`). `RejoinProgress.InitCollections` cria toda propriedade `List`/`Dictionary`/`HashSet` nula antes. Log: `keeping this run's build ... N empty collections created`.
+
+### Segundo teste da 1.6.0: Desistir travava o convidado em Carregando
+
+B desistiu e voltou ao menu; o host mandou o `RunStart` de novo na hora (`slot 1 connected mid-run - RunStart resent`): B tinha entrado na run enquanto o host ainda carregava, e o `NoteInRun` só anotava com o host `LocalInRun`. O `RunStart` chegou com a cena do menu acabando de abrir (a aba Co-op foi montada depois) e a troca de cena nunca terminou.
+
+- Host: `NoteInRun` vale também com o host carregando, e `NoteLeftRun` (InRun -> Menu na mesma conexão) marca o jogador: quem sai da run por vontade própria só volta com Lutar.
+- Cliente: um `RunStart` que chega com menos de 2 s de menu espera (`menu not settled yet - the RunStart waits` / `starting the held RunStart`), até 30 s.
+- O engasgo do host na saída de B vinha em parte desse reenvio (run + ressincronização de inimigos de novo).

@@ -43,7 +43,29 @@ public static partial class PassiveObjectSync
     private static GameObject? PowersPrefab(string name)
     {
         EnsurePowersLoaded();
-        return PowersByName.TryGetValue(name, out var go) ? go : null;
+        if (PowersByName.TryGetValue(name, out var go) && go != null) return go;
+        if (ReloadPowersIfStale()) return PowersByName.TryGetValue(name, out go) && go != null ? go : null;
+        return null;
+    }
+
+    /// <summary>1.6.0: the game unloads unused assets on a scene change, and the powers/ prefabs we loaded went with
+    /// it: the second match showed every partner object as a marker (`No prefab ... powers`). If any loaded prefab is
+    /// gone, load the folder again (and the owner's prefab ids with it). True if it reloaded.</summary>
+    private static bool ReloadPowersIfStale()
+    {
+        bool stale = false;
+        foreach (var go in PowersByName.Values) if (go == null) { stale = true; break; }
+        if (!stale) return false;
+        PowersByName.Clear();
+        PowersPrefabIds.Clear();
+        _powersIdsBuilt = false;
+        _powersTried = false;
+        LoadedTrees.RemoveAll(o => o == null);
+        Templates.Clear();
+        MissAt.Clear();
+        Plugin.StaticLog.LogInfo("[SoulstoneCoop][passives] The mini-game prefabs were unloaded with the last scene: loading them again.");
+        EnsurePowersLoaded();
+        return PowersByName.Count > 0;
     }
 
     // ---------------- owner: the scan ----------------
@@ -75,6 +97,7 @@ public static partial class PassiveObjectSync
             _lastPoolCount = -1;
         }
         EnsurePowersLoaded();
+        ReloadPowersIfStale();
         if (PowersByName.Count == 0) return;
         if (!_powersIdsBuilt) BuildPowersIds();
 
@@ -249,6 +272,7 @@ public static partial class PassiveObjectSync
             if (o.Mats == null || Time.unscaledTime - o.MatsAt > RefreshInterval)
             {
                 o.Mats = CollectMats(c.transform);
+                o.Anims = CollectAnims(c.transform);
                 o.MatsAt = Time.unscaledTime;
             }
             if (o.Mats.Count == 0) return;
@@ -352,15 +376,139 @@ public static partial class PassiveObjectSync
                 m.RendererMap[PathHash(RelPath(r.transform, root))] = r;
             }
             foreach (var kv in m.MatStates) ApplyMat(m, kv.Key, kv.Value);
+            IndexAnimators(m); // 1.6.0
         }
         catch (Exception ex) { if (_errors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Renderers of '{m.Name}': {ex.Message}"); }
+    }
+
+    // ---------------- 1.6.0: animator states (PassiveAnims = 149) ----------------
+    // The probe showed the mini-game objects animate with their own Animator (the Pirate's first mate digging, the
+    // treasure chest, the Shaman's ritualists), driven by their scripts, which the copy doesn't run: its animators sat
+    // in their entry state. The owner sends, per animator (path hash) and layer (up to 3), the current state's full
+    // path hash, its normalized time and the animator's speed, when the state changes and in full every 3 s; the copy
+    // Plays that state at that time (only if it isn't in it already, so the 3 s refresh doesn't restart it).
+
+    private const int MaxAnimators = 8, MaxLayers = 3;
+
+    private struct AnimValue
+    {
+        public int Hash;
+        public float Time, Speed;
+    }
+
+    private static int _sentAnims, _recvAnims, _appliedAnims, _unmatchedAnims;
+
+    private static List<(Animator A, uint PathHash)> CollectAnims(Transform root)
+    {
+        var list = new List<(Animator, uint)>();
+        var all = root.GetComponentsInChildren(Il2CppType.Of<Animator>(), true);
+        for (int i = 0; i < all.Length && list.Count < MaxAnimators; i++)
+        {
+            var a = all[i]?.TryCast<Animator>();
+            if (a == null || a.runtimeAnimatorController == null) continue;
+            list.Add((a, PathHash(RelPath(a.transform, root))));
+        }
+        return list;
+    }
+
+    private static void SendAnims(Owned o, bool full)
+    {
+        if (o.Comp == null || o.Anims == null || o.Anims.Count == 0 || !NetworkManager.HasPeer) return;
+        try
+        {
+            NetDataWriter? w = null;
+            int countPos = 0, n = 0;
+            foreach (var (a, pathHash) in o.Anims)
+            {
+                if (a == null || !a.isActiveAndEnabled) continue;
+                int layers = Mathf.Min(a.layerCount, MaxLayers);
+                for (int layer = 0; layer < layers; layer++)
+                {
+                    var info = a.GetCurrentAnimatorStateInfo(layer);
+                    ulong key = ((ulong)pathHash << 8) | (uint)layer;
+                    if (!full && o.SentAnims.TryGetValue(key, out int prev) && prev == info.fullPathHash) continue;
+                    if (w == null)
+                    {
+                        w = new NetDataWriter();
+                        w.Put((byte)PacketType.PassiveAnims);
+                        w.Put(o.Id);
+                        countPos = w.Length;
+                        w.Put((byte)0);
+                    }
+                    w.Put(pathHash);
+                    w.Put((byte)layer);
+                    w.Put(info.fullPathHash);
+                    w.Put(info.normalizedTime);
+                    w.Put(a.speed);
+                    o.SentAnims[key] = info.fullPathHash;
+                    n++;
+                }
+            }
+            if (w == null) return;
+            w.Data[countPos] = (byte)n;
+            NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
+            _sentAnims += n;
+        }
+        catch (Exception ex) { if (_errors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Animators of '{o.Name}': {ex.Message}"); }
+    }
+
+    public static void OnAnims(NetDataReader r)
+    {
+        ushort id = r.GetUShort();
+        int n = r.GetByte();
+        Remote.TryGetValue(KeyOf(PacketRouter.From, id), out var m);
+        for (int i = 0; i < n; i++)
+        {
+            uint pathHash = r.GetUInt();
+            byte layer = r.GetByte();
+            var v = new AnimValue { Hash = r.GetInt(), Time = r.GetFloat(), Speed = r.GetFloat() };
+            _recvAnims++;
+            if (m == null) continue;
+            ulong key = ((ulong)pathHash << 8) | layer;
+            m.AnimStates[key] = v;
+            if (m.Go != null && !m.IsMarker) ApplyAnim(m, key, v);
+        }
+    }
+
+    private static void ApplyAnim(Mirror m, ulong key, AnimValue v)
+    {
+        if (m.AnimatorMap == null) return;
+        uint pathHash = (uint)(key >> 8);
+        int layer = (int)(key & 0xFF);
+        if (!m.AnimatorMap.TryGetValue(pathHash, out var a) || a == null || layer >= a.layerCount) { _unmatchedAnims++; return; }
+        try
+        {
+            if (a.speed != v.Speed) a.speed = v.Speed;
+            if (!a.isActiveAndEnabled) return;
+            if (a.GetCurrentAnimatorStateInfo(layer).fullPathHash == v.Hash) return; // already there (the 3 s refresh)
+            if (!a.HasState(layer, v.Hash)) { _unmatchedAnims++; return; }
+            a.Play(v.Hash, layer, v.Time - Mathf.Floor(v.Time));
+            _appliedAnims++;
+        }
+        catch { _unmatchedAnims++; }
+    }
+
+    /// <summary>Right after a copy is built (from IndexRenderers): its animators by path, and what the owner already sent.</summary>
+    private static void IndexAnimators(Mirror m)
+    {
+        if (m.Go == null) return;
+        m.AnimatorMap = new Dictionary<uint, Animator>();
+        var root = m.Go.transform;
+        var all = root.GetComponentsInChildren(Il2CppType.Of<Animator>(), true);
+        for (int i = 0; i < all.Length; i++)
+        {
+            var a = all[i]?.TryCast<Animator>();
+            if (a != null) m.AnimatorMap[PathHash(RelPath(a.transform, root))] = a;
+        }
+        foreach (var kv in m.AnimStates) ApplyAnim(m, kv.Key, kv.Value);
     }
 
     /// <summary>Telemetry line of the generic part (every 10 s from Tick).</summary>
     private static string GenericTelemetry()
     {
-        string s = $"scan found={_scanFound} foreign={_scanForeign} fogsSkipped={_scanSkippedFog} roots={NotPowers.Count + Candidates.Count} | mats sent={_sentMats} recv={_recvMats} applied={_appliedMats} unmatched={_unmatchedMats}";
+        string s = $"scan found={_scanFound} foreign={_scanForeign} fogsSkipped={_scanSkippedFog} roots={NotPowers.Count + Candidates.Count} | mats sent={_sentMats} recv={_recvMats} applied={_appliedMats} unmatched={_unmatchedMats} | anims sent={_sentAnims} recv={_recvAnims} applied={_appliedAnims} unmatched={_unmatchedAnims}";
         _scanFound = _scanForeign = _scanSkippedFog = 0;
+        _sentAnims = _recvAnims = _appliedAnims = _unmatchedAnims = 0;
         _sentMats = _recvMats = _appliedMats = _unmatchedMats = 0;
         return s;
     }

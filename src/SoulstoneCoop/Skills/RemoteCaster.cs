@@ -30,6 +30,7 @@ public static class RemoteCaster
         public Skill Skill = null!;
         public IntPtr Ptr;
         public int Rejects; // 1.4.1: consecutive CastSkill == false
+        public float TickUntil; // 1.6.0: a TemporaryRotatingSkill's OnUpdate runs until then (copies aren't AddSkill'ed)
         public Il2CppSystem.Func<bool>? ChannelFunc;
         public Il2CppSystem.Func<Skill, Vector3>? FrontFunc, GroundFunc;
         public Vector3 Front, Ground;
@@ -519,6 +520,17 @@ public static class RemoteCaster
 
             c = new Copy { Key = key, Skill = inst, Ptr = inst.Pointer, Kind = inst.GetIl2CppType().Name };
             caster.Copies[key] = c;
+            // 1.6.0: TemporaryRotatingSkill.DoActivate (0x56A5B0) CrossFades its AnimationTrait (+0x268) on the skill's
+            // CasterAnimator (+0x130) and throws if the trait is there and the animator isn't: our stand-in has no
+            // AnimatorComponent (the Machinist's ResonatingCrystals NRE). Without the trait it skips the CrossFade and
+            // spawns the crystals; the ghost's cast animation is played separately (PlayGhostAnimation).
+            var trs = inst.TryCast<TemporaryRotatingSkill>();
+            if (trs != null) FieldDump.Log(trs, $"copy '{key}' (slot {caster.Slot})", FieldDump.RotatingOffsets);
+            if (trs != null && inst.CasterAnimator == null && trs.AnimationTrait != null)
+            {
+                trs.AnimationTrait = null!;
+                Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Copy '{key}' (TemporaryRotatingSkill): no caster animator on the stand-in, animation trait dropped.");
+            }
             Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Copy '{key}' ({c.Kind}, type={skillType}, via {how}) set up on remote caster {caster.Slot}.");
             return c;
         }
@@ -698,6 +710,8 @@ public static class RemoteCaster
                 return PlayResult.Rejected;
             }
             c.Rejects = 0;
+            var rot = c.Skill.TryCast<TemporaryRotatingSkill>();
+            if (rot != null) c.TickUntil = Time.unscaledTime + Mathf.Clamp(rot.ProjectileSkillDuration + 1f, 2f, 60f);
             QueueVisualProbe(caster, c, m);
             if (template == null) PlayGhostAnimation(caster, c.Skill); // a God cast is not the ghost's own
             return PlayResult.Played;
@@ -742,6 +756,23 @@ public static class RemoteCaster
             foreach (var kv in caster.Copies)
                 if (kv.Value.AlwaysOn && (!active || !caster.AlwaysOnWanted.ContainsKey(kv.Key))) (stop ??= new List<string>()).Add(kv.Key);
             if (stop != null) foreach (var key in stop) StopAlwaysOn(caster, key, active ? "no longer used" : "player down or no caster");
+            // 1.6.0: a replayed TemporaryRotatingSkill (the Machinist's crystals) spins and ends its projectiles in its
+            // own OnUpdate, which only the owner's caster UpdateAll calls: run it here for the skill's duration.
+            if (caster.Entity != null)
+            {
+                float now = Time.unscaledTime;
+                foreach (var cp in caster.Copies.Values)
+                {
+                    if (cp.TickUntil <= 0f) continue;
+                    if (now > cp.TickUntil || cp.Skill == null) { cp.TickUntil = 0f; continue; }
+                    try { var t = cp.Skill.TryCast<TemporaryRotatingSkill>(); if (t != null) t.OnUpdate(); else cp.TickUntil = 0f; }
+                    catch (Exception ex)
+                    {
+                        cp.TickUntil = 0f;
+                        if (_alwaysOnErrors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Temporary '{cp.Key}' OnUpdate for slot {caster.Slot}: {ex.Message}");
+                    }
+                }
+            }
             if (!active || caster.AlwaysOnWanted.Count == 0) continue;
 
             foreach (var kv in caster.AlwaysOnWanted)

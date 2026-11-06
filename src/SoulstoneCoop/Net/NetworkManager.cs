@@ -130,6 +130,7 @@ public static class NetworkManager
 
     public static void StartHost()
     {
+        CancelReconnect();
         Stop();
         _idleError = null;
         var t = LiteNetTransport.Host(Callbacks(), out var error);
@@ -146,12 +147,14 @@ public static class NetworkManager
         Stop();
         _idleError = null;
         TargetAddress = address;
+        _lastTarget = (address, 0UL, 0UL);
         Begin(LiteNetTransport.Client(Callbacks(), address), NetRole.Client);
     }
 
     /// <summary>Steam: host the players who join our lobby.</summary>
     public static void StartSteamHost(ulong lobbyId)
     {
+        CancelReconnect();
         Stop();
         _idleError = null;
         Begin(new SteamTransport(Callbacks(), lobbyId, hostId: 0), NetRole.Host);
@@ -162,6 +165,7 @@ public static class NetworkManager
     {
         Stop();
         _idleError = null;
+        _lastTarget = (null, lobbyId, hostId);
         Begin(new SteamTransport(Callbacks(), lobbyId, hostId), NetRole.Client);
     }
 
@@ -175,6 +179,7 @@ public static class NetworkManager
     /// <summary>Leave co-op: closes the transport and runs every module's disconnect cleanup for whoever was there.</summary>
     public static void Stop()
     {
+        _clientWasConnected = false; // (a pending reconnect is cancelled only by CancelReconnect: user actions, hosting)
         var t = Transport;
         if (t == null)
         {
@@ -209,7 +214,13 @@ public static class NetworkManager
             SendWelcome(slot); // first thing on the ordered channel: the client's slot and who else is here
             Players.MarkJoined(slot);
         }
-        else Players.MarkJoined(Players.HostSlot);
+        else
+        {
+            Players.MarkJoined(Players.HostSlot);
+            if (_reconnects > 0) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][net] Reconnected to the host (attempt {_reconnects}).");
+            _clientWasConnected = true;
+            _reconnects = 0;
+        }
         try { PeerConnected?.Invoke(slot); }
         catch (System.Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] PeerConnected({slot}) handler: {ex}"); }
     }
@@ -275,17 +286,94 @@ public static class NetworkManager
     public static void PollEvents()
     {
         var t = Transport;
-        if (t == null) return;
+        if (t == null) { ReconnectTick(); return; }
         t.Poll();
         if (t.WantsStop && Transport == t)
         {
             // Deferred: stopping from inside a transport callback is not safe.
             var status = t.Status;
+            bool lost = Role == NetRole.Client && _clientWasConnected && status != NetStatus.Rejected;
+            float keepUntil = _reconnectUntil;
+            int keepN = _reconnects;
             Stop();
             if (status == NetStatus.Rejected) _idleStatus = NetStatus.Rejected;
+            if (lost) ArmReconnect();
+            else if (keepUntil > 0f && status != NetStatus.Rejected) { _reconnectUntil = keepUntil; _reconnects = keepN; } // a failed attempt: keep trying
         }
         LogStability();
         LogTraffic();
+    }
+
+    // ---------------- 1.6.0: client auto-reconnect (docs/reentrada-notas.md) ----------------
+    // A client whose established connection drops (not refused, not its own Disconnect) tries the same host again for
+    // ReconnectWindow seconds: same IP, or the same Steam lobby and host. Back in, its Hello/LobbyState tell the host
+    // where it is: still in the run (CoopLife waits instead of ending it) -> the host's usual resync rebuilds the
+    // enemies, ghosts and proxy, no reload; in the menu -> the host's AllowRejoin sends the run with its build.
+
+    private const float ReconnectWindow = 45f, ReconnectEvery = 6f;
+    private static (string? Address, ulong Lobby, ulong Host) _lastTarget;
+    private static bool _clientWasConnected;
+    private static float _reconnectUntil, _nextReconnectAt;
+    private static int _reconnects;
+
+    /// <summary>A dropped client is trying to get back to its host.</summary>
+    public static bool Reconnecting => _reconnectUntil > 0f && UnityEngine.Time.unscaledTime < _reconnectUntil && !HasPeer;
+
+    public static float ReconnectSecondsLeft => Reconnecting ? _reconnectUntil - UnityEngine.Time.unscaledTime : 0f;
+
+    /// <summary>Debug (F1 in a client window): drop the connection as if the network failed, to test the reconnect.</summary>
+    public static void DebugDrop()
+    {
+        if (Role != NetRole.Client || !HasPeer) { Plugin.StaticLog.LogWarning("[SoulstoneCoop][debug] F1 (drop the connection) only works in a connected client window."); return; }
+        Plugin.StaticLog.LogInfo("[SoulstoneCoop][debug] F1: dropping the connection to the host (simulated network failure).");
+        bool was = _clientWasConnected;
+        Stop();
+        if (was) ArmReconnect();
+    }
+
+    /// <summary>The player chose something else (Disconnect, Join, Host, Invite): no automatic reconnect.</summary>
+    public static void CancelReconnect()
+    {
+        if (_reconnectUntil > 0f) Plugin.StaticLog.LogInfo("[SoulstoneCoop][net] Reconnect cancelled.");
+        _reconnectUntil = 0f;
+        _reconnects = 0;
+    }
+
+    private static void ArmReconnect()
+    {
+        if (_lastTarget.Address == null && _lastTarget.Host == 0) return;
+        float now = UnityEngine.Time.unscaledTime;
+        _reconnectUntil = now + ReconnectWindow;
+        _nextReconnectAt = now + 1f;
+        _reconnects = 0;
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][net] Connection to the host lost: reconnecting for up to {ReconnectWindow:F0} s.");
+    }
+
+    private static void ReconnectTick()
+    {
+        if (_reconnectUntil <= 0f) return;
+        float now = UnityEngine.Time.unscaledTime;
+        if (now >= _reconnectUntil)
+        {
+            _reconnectUntil = 0f;
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][net] Could not reconnect to the host in {ReconnectWindow:F0} s ({_reconnects} attempts).");
+            return;
+        }
+        if (now < _nextReconnectAt) return;
+        _nextReconnectAt = now + ReconnectEvery;
+        _reconnects++;
+        float until = _reconnectUntil;
+        int n = _reconnects;
+        var target = _lastTarget;
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][net] Reconnect attempt {n} ({(target.Address != null ? target.Address : "Steam")}).");
+        try
+        {
+            if (target.Address != null) StartClient(target.Address);
+            else Steam.SteamLobby.ReconnectTo(target.Lobby, target.Host); // back into the lobby first (the host only takes members)
+        }
+        catch (System.Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][net] Reconnect attempt {n}: {ex.Message}"); }
+        _reconnectUntil = until;
+        _reconnects = n;
     }
 
     private static readonly bool[] _wasUnstable = new bool[Players.MaxSlots];

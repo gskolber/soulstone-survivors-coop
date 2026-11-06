@@ -19,13 +19,16 @@ namespace SoulstoneCoop;
 /// </summary>
 public static class MechanicDebug
 {
-    private static bool _prevF2;
+    private static bool _prevF2, _prevF1;
 
     public static void Tick()
     {
         if (NetworkManager.Role == NetRole.None) return;
         var kb = Keyboard.current;
         if (kb == null) return;
+        bool f1 = kb.f1Key.isPressed; // 1.6.0: F1 in a client window drops the connection (tests the auto-reconnect)
+        if (f1 && !_prevF1 && !Ui.CoopUi.IsTyping) NetworkManager.DebugDrop();
+        _prevF1 = f1;
         bool f2 = kb.f2Key.isPressed;
         bool pressed = f2 && !_prevF2;
         _prevF2 = f2;

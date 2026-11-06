@@ -32,6 +32,7 @@ public enum PacketType : byte
     Hello = 30,        // either way: name, character, weapon, skins, mod version (phase 6, on connect and when it changes) (ReliableOrdered)
     LobbyState = 31,   // either way: sender is in the menu / loading a run / in a run (phase 6, on change) (ReliableOrdered)
     RunStart = 32,     // host -> client: scene, mode, mastery tier/level, Survivors affixes: start the same run (phase 6) (ReliableOrdered)
+    RunJoinRequest = 34,  // client -> host, 1.6.0: the client is in the menu and pressed Fight while the host is in a run: bring me in (no payload) (ReliableOrdered)
     RunStartRefused = 33, // client -> host: could not follow RunStart, with the reason (phase 6) (ReliableOrdered)
     // 50-59: phase 5
     PartnerHealth = 50, // either way: sender's hp f32 | maxHp f32 | flags u8 (1 down, 2 dead), on change at <= 5 Hz + every 1 s (ReliableOrdered)
@@ -68,6 +69,7 @@ public enum PacketType : byte
     PassiveStates = 145,   // either way: count u8 | count * (id u16 | pos 3f | yaw f32), only what moved, ~10 Hz (Sequenced)
     PassiveParts = 147,    // either way, 1.4.1: parts of one passive object: id u16 | count u8 | count * (path hash u32 | active u8 | localScale 3f), on change 5 Hz + full every 3 s (ReliableOrdered)
     PassiveMaterials = 148, // either way, 1.5.0: animated shader values of one passive object: id u16 | count u8 | count * (renderer path hash u32 | property name hash u32 | color u8 | f32 or 4 f32), on change 5 Hz + full every 3 s (ReliableOrdered)
+    PassiveAnims = 149,    // either way, 1.6.0: animator states of one passive object: id u16 | count u8 | count * (animator path hash u32 | layer u8 | state full path hash i32 | normalized time f32 | speed f32), on change 5 Hz + full every 3 s (ReliableOrdered)
     AscensionFx = 146,     // either way: one effect of the sender's ascension / mechanic (VFX, sound, world light), see AscensionFx (ReliableUnordered)
     SkillAlwaysOn = 141,   // either way: the sender's always-on skills (rotating shields): count u8 | count * (key, type, level, extra, speed, cooldown, scale), on change + every 3 s (ReliableOrdered)
 }
@@ -89,7 +91,7 @@ public static class PacketRouter
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
         PacketType.SkillChannelAim => DeliveryMethod.Sequenced, // only the latest aim matters
         PacketType.SkillAlwaysOn => DeliveryMethod.ReliableOrdered,
-        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn or PacketType.PassiveParts or PacketType.PassiveMaterials => DeliveryMethod.ReliableOrdered,
+        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn or PacketType.PassiveParts or PacketType.PassiveMaterials or PacketType.PassiveAnims => DeliveryMethod.ReliableOrdered,
         PacketType.PassiveStates => DeliveryMethod.Sequenced,
         PacketType.AscensionFx => DeliveryMethod.ReliableUnordered,
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
@@ -250,6 +252,9 @@ public static class PacketRouter
             case PacketType.PassiveMaterials:
                 Summons.PassiveObjectSync.OnMaterials(reader);
                 break;
+            case PacketType.PassiveAnims:
+                Summons.PassiveObjectSync.OnAnims(reader);
+                break;
             case PacketType.TaskObjective:
                 Loot.TaskObjectiveSync.OnPacket(reader);
                 break;
@@ -270,6 +275,9 @@ public static class PacketRouter
                 break;
             case PacketType.RunStartRefused:
                 Lobby.RunSync.OnRunStartRefused(reader);
+                break;
+            case PacketType.RunJoinRequest:
+                Lobby.RunSync.OnJoinRequest(From);
                 break;
             case PacketType.PortalTransition:
                 Lobby.PortalSync.OnPortalTransition(reader);

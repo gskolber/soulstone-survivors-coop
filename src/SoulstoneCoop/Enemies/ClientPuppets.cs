@@ -342,7 +342,7 @@ public static class ClientPuppets
                 if (_bossesCreated + _bossesReleased + _bossErrors + _maxHealthMatched > 0 || RetryUntil.Count > 0)
                     Plugin.StaticLog.LogInfo(
                         $"[SoulstoneCoop][puppets] bosses created={_bossesCreated} released={_bossesReleased} errors={_bossErrors} " +
-                        $"bossBars={GameManagerUtil.BossEntities?.Count ?? -1} summonRetries={RetryUntil.Count} maxHealthMatched={_maxHealthMatched}");
+                        $"bossBars={BossBarCount()} summonRetries={RetryUntil.Count} maxHealthMatched={_maxHealthMatched}");
                 Plugin.StaticLog.LogInfo(
                     $"[SoulstoneCoop][damage] Client: hits={_dmgHits} damage={_dmgSum:F0} packets={_dmgPackets} skippedEnemyAttacker={_dmgSkippedEnemyAttacker}");
                 Plugin.StaticLog.LogInfo($"[SoulstoneCoop][puppets] facing: targetChanges={_faceChanges} modeReasserts={_faceReasserts} errors={_faceErrors}");
@@ -562,6 +562,13 @@ public static class ClientPuppets
             p.FaceCheckAt = now + 5f;
             if (_faceErrors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][puppets] Facing #{p.NetId}: {ex.Message}");
         }
+    }
+
+    /// <summary>1.6.0: telemetry only; GameManagerUtil.BossEntities throws while no match is loaded (seen in the menu).</summary>
+    private static int BossBarCount()
+    {
+        try { return GameManagerUtil.HasGameManager ? GameManagerUtil.BossEntities?.Count ?? -1 : -1; }
+        catch { return -1; }
     }
 
     private static float Horizontal(Vector3 v) => Mathf.Sqrt(v.x * v.x + v.z * v.z);
