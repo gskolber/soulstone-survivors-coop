@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.5.** Played by two people over Steam (the 1.2 features); the 1.3, 1.4 and 1.5 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.6.** Played by two people over Steam (up to 1.5); the 1.6 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
@@ -54,11 +54,11 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 
 ## Known limitations
 
-- Rejoining a run in progress is experimental (behind `[Coop] AllowRejoin`, off by default): a player who was in that run comes back with their level, upgrades and items, as long as their game stayed open; anyone else joins as a new character.
+- Rejoining a run in progress (`[Coop] AllowRejoin`, on by default since 1.6; older configs keep `false`): a player who was in that run comes back with their level, upgrades and items, as long as their game stayed open; anyone else joins as a new character. A dropped connection reconnects by itself for 45 s; if the host changed stage meanwhile, the player comes back into the old one.
 - XP earned while you are down is held and given when you are revived; if nobody revives you, it is lost.
 - Crusade mode is not supported in co-op.
 - A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
-- Another character's ascension effects need that character's assets in your game; when they aren't loaded, those effects are skipped. Mini-game objects show without their animations (a digging first mate, dancing ritualists stay still), and the Machinist's rotating crystals don't show on partners yet.
+- Another character's ascension effects need that character's assets in your game; when they aren't loaded, those effects are skipped. The Machinist's rotating crystals don't show on partners yet.
 
 The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 

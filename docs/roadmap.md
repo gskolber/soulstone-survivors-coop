@@ -94,12 +94,11 @@ Em ordem de prioridade. Detalhes e endereços em `proximos-investigacao.md` (se�
 
 | # | Item | Esforço | Origem |
 |---|---|---|---|
-| 1 | Reconexão transparente: o convidado espera o host voltar na mesma cena, sem recarregar (a reentrada da 1.4 recarrega a cena com a build guardada) | grande | `fase8-notas.md`, §5; `reentrada-notas.md` |
+| 1 | Reconexão quando o host trocou de estágio (portal) ou reiniciou durante a queda: hoje o convidado volta no estágio antigo | médio | `reentrada-notas.md` |
 | 2 | Modo Crusade (começa num lobby e troca de mapa no meio; portas e baús agora têm base) | grande | `fase6-notas.md`, `portais-notas.md`, §6 |
 | — | Esquiva por dash nos hits que o host calcula no proxy (mexe no balanceamento) | — | `pendencias-notas.md` |
 | — | Skin de mod que só o parceiro tem; efeitos de ascensão de outro personagem que não estão carregados (as passivas agora carregam a árvore do dono) | — | `ascensao-notas.md`, `passivas-notas.md` |
 | — | Cristais giratórios do Machinist no parceiro: NRE mais adiante no `DoActivate` da réplica, depois do pool da projectile skill (`sempre-ligadas-notas.md`) | médio | `sempre-ligadas-notas.md` |
-| — | Progresso da área do Demon Hunter (e de outros mini-jogos com barra) para os outros jogadores: hoje só a pedra/área aparece | pequeno | `passivas-notas.md` |
 
 ## Ainda não vistos em jogo (de fases anteriores)
 
