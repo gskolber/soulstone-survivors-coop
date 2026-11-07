@@ -72,7 +72,7 @@ Revisei todos os chamadores de `AIUtil.GetAllEntitiesInSpecificTeam` fora de che
 
 ## O que não foi feito
 
-- **Esquiva por dash:** os hits que o host calcula no proxy não sabem que o cliente estava dando dash. Resolver isso pede mandar o estado do dash com precisão de frame, ou descartar o `DamageToClient` no cliente durante o dash. As duas coisas mudam o balanceamento e precisam de teste.
+- **Esquiva por dash:** os hits que o host calcula no proxy não sabem que o cliente estava dando dash. Resolver isso pede mandar o estado do dash com precisão de frame, ou descartar o `DamageToClient` no cliente durante o dash. As duas coisas mudam o balanceamento e precisam de teste. **Feito na 1.6.1** (seção no fim), menos as power-ups "ao esquivar".
 - **Afixos do jogador no proxy:** não mexi.
 - **Stun:** se o jogo nunca atordoa jogadores, o encaminhamento simplesmente não faz nada (sem `StunnableComponent` ou com imunidade).
 

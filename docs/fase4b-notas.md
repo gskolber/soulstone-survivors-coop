@@ -37,6 +37,7 @@ Decisão do usuário: quando qualquer um coleta uma orb, os dois ganham o XP, e 
   - `recv = replayed`, `errors = 0` e `blockedPuppetLoot` igual às mortes, então não houve drop em dobro.
   - Nenhum erro de patch nem de trampoline.
 - **Jogador morto:** o `XpShare` recebido por um jogador local morto **não é aplicado**. Fica retido (`xpShareHeld`) e entra quando ele reviver; se a partida acabar, é descartado (`xpShareDiscarded`). Motivo: o `AddExperience` num morto pode abrir o level-up, prender o `LevelUpTime` em 0 e congelar os dois pela pausa sincronizada. **Não testado em jogo; validar junto com a 4A.** Quando o estado "caído" (`ReviveOnDeath`) existir, ele entra no mesmo check do `LootSync.ApplyShareIn`.
+  - **Conferido no código (1.6.1):** o caído já entra nesse check, e o XP que o próprio jogador caído pega também fica retido (`OnLocalAddExperience`, telemetria `ownXpHeldWhileDown`). Tudo entra quando ele levanta: revive, vitória ou portal (o revive do portal roda antes da troca de cena). Só é descartado se a run acaba com ele caído.
 
 ## Telemetria `[loot]`, a cada 5 s
 

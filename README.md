@@ -30,6 +30,12 @@ To uninstall, delete `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, 
 3. **Guest:** accept the invite in Steam chat. The Co-op panel shows *Connected with <name> (Steam, x ms)*. If the invite doesn't arrive, the host clicks **Copy code** and the guest pastes it into the panel and clicks **Join**.
 4. Each player picks their own character; the **host** picks the map and presses Fight, and the guest's run starts by itself on the same map.
 
+In a run:
+
+- **1-4** pick an upgrade on the compact level-up panel (gamepad: D-pad left/right to choose, up to pick); **Tab** (or D-pad down) hides or shows it.
+- **F4** (host) lifts everyone else's pause right away.
+- A guest who connects while the host is in a run is brought into it; one who surrendered presses **Fight** in the menu to go back in (see [Known limitations](#known-limitations)).
+
 Direct IP is also available (**Host by IP** / type the host's IP → **Join**, UDP port 7777). Over the internet it needs a gaming VPN (Tailscale, ZeroTier, Radmin) or a forwarded port.
 
 ## What works
@@ -47,15 +53,17 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Chests and ore | Appear for everyone, and anyone can open them; each extra player standing on one opens it faster (`[Coop] ChestOpenBonusPerPlayer`); the loot goes to everyone; your own character says its line when you start opening one |
 | Map tasks | The objective markers on the map appear for everyone, and any player can start them (faster with more players on the marker); everyone sees the task's timer or kill counter; the enemies and the reward are shared |
 | Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel at the top of the screen that you keep playing under (1-4 or the gamepad's D-pad to pick) |
-| Death | Downed state, any ally standing next to you revives you: a ring on the ground shows the revive area and fills as you're revived, and a line ties each downed player to the nearest living ally (stepping away to dodge only slowly drains the revive bar); defeat only when everyone is down; with the host down, enemies keep coming to the players still standing; the God's meteors go after every living player, not only the host; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
+| Death | Downed state, any ally standing next to you revives you: a ring on the ground shows the revive area and fills as you're revived, and a line ties each downed player to the nearest living ally (stepping away to dodge only slowly drains the revive bar); XP you pick up while down is added when you get up (revived, victory or portal); defeat only when everyone is down; with the host down, enemies keep coming to the players still standing; the God's meteors go after every living player, not only the host; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
 | End of run | Victory, Home portal, Endless and challenge portals and Restart happen for everyone; the host surrendering ends the run for all |
-| Disconnects | Host leaving ends everyone's run with a notice; a guest leaving (or surrendering) lets the others continue |
+| Disconnects | A dropped connection reconnects by itself for 45 s and the run goes on (no reload); the host leaving ends everyone's run with a notice; a guest leaving (or surrendering) lets the others continue |
 | Language | The mod's own texts follow the game's language: English and Portuguese written by hand; Spanish, French, German, Russian, Chinese and Japanese machine-translated |
 
 ## Known limitations
 
-- Rejoining a run in progress (`[Coop] AllowRejoin`, on by default since 1.6; older configs keep `false`): a dropped connection reconnects by itself for 45 s and keeps playing the same run with its build; a player who surrendered and rejoins with Fight, or anyone new, joins as a new character; if the host changed stage meanwhile, the player comes back into the old one.
-- XP earned while you are down is held and given when you are revived; if nobody revives you, it is lost.
+- Rejoining a run in progress (`[Coop] AllowRejoin`, on by default since 1.6; older configs keep `false`): a dropped connection reconnects by itself for 45 s and keeps playing the same run with its build; a player who surrendered and rejoins with Fight, or anyone new, joins as a new character.
+- The reconnect doesn't notice if the host went through a portal, restarted or went back to the menu while you were disconnected: you come back into the old stage (or a run the host already left). Surrender and press Fight to join the host's current run.
+- A guest's "on dash dodge" upgrades don't trigger (the dodge itself works since 1.6.1).
+- The [test keys](#test-keys) are active in every co-op session, and Insert, Delete and PageDown even outside co-op.
 - Crusade mode is not supported in co-op.
 - A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
 - Another character's ascension effects need that character's assets in your game; when they aren't loaded, those effects are skipped. The Machinist's rotating crystals don't show on partners yet.
@@ -64,8 +72,13 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Roadmap
 
-- Rejoin without a reload (staying in the same scene while the connection comes back).
-- Crusade mode.
+Next, in order (details in [`docs/roadmap.md`](docs/roadmap.md)):
+
+1. Test keys behind a setting, off by default.
+2. Reconnecting after the host changed stage, restarted or left the run.
+3. Surrendering and coming back with Fight keeps your build.
+4. Guests' "on dash dodge" upgrades.
+5. Crusade mode.
 
 ## Settings
 
@@ -79,7 +92,7 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | `[Coop] LevelUpOverlayOpacity` | `0.8` | Opacity of the compact upgrade panel while the mouse isn't over it |
 | `[Coop] PartyHud` | `true` | In a run, a panel at the top left with each partner's health, level, XP, revives left and state (down, reviving, dead, disconnected) |
 | `[Coop] EndRunWhenHostLeaves` | `true` | End the guest's run when the host disconnects |
-| `[Coop] AllowRejoin` | `false` | Host, experimental: let players join a run in progress; one who dropped out of it comes back with the level, upgrades and items they had |
+| `[Coop] AllowRejoin` | `true` | Host: players can join a run in progress (connecting, or Fight in the menu); a dropped connection reconnects by itself for 45 s and keeps its build; `false` = they wait in the menu. Configs from before 1.6 keep `false` |
 | `[Coop] MaxPlayers` | `8` | Lobby size (2-8) |
 | `[Coop] EnemyScalePerPlayer` | `0` | Extra enemies per additional player (try `0.25`) |
 | `[Coop] ReplicaCastRadius` | `60` | Don't draw skills of partners farther than this (also how far from a guest regular enemies' attack animations are sent) |
@@ -90,6 +103,27 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 | `[Updates] CheckForUpdates` | `true` | Check GitHub at startup and say in the main menu when a newer version is out (never downloads anything); `false` = no request at all |
 | `[Updates] SkippedVersion` | `""` | Set by "Don't remind me for this version"; empty = remind about any newer release |
 | `[Debug] SimulateLatencyMs`, `SimulateJitterMs`, `SimulatePacketLossPercent` | `0` | Simulate a bad network for testing |
+| `[Debug] AutoHost` | `false` | Start hosting by IP as soon as the main menu opens |
+| `[Debug] PowersProbe` | `false` | Log only: what your own hero spawns for its mini-game (to diagnose a hero whose objects don't show for partners) |
+
+### Test keys
+
+Used to test the mod. They are still on in this version and will move behind a setting (see [Roadmap](#roadmap)).
+
+| Key | Window | What it does |
+|---|---|---|
+| F1 | guest | Drops the connection (tests the 45 s reconnect) |
+| F2 | anyone, in a run | Gives your hero its mini-game mechanic for this run |
+| F3 | host | Spawns a chest or ore next to you |
+| F5 / Shift+F5 | host | Takes the Endless / Boss Rush portal |
+| F6 / Shift+F6 | anyone, in a run | +1 / +5 levels for you (not shared) |
+| F7 | host | Spawns a void presence, void hunters, a mineral and a pillar |
+| F8 | host | Completes the kill objective, so the boss comes |
+| F9 | anyone, in a run | Lethal hit on yourself |
+| F10 | host | Victory |
+| F11 | host | Revives everyone |
+| Insert / Delete | anywhere, even outside co-op | Host by IP / connect to 127.0.0.1 |
+| PageDown | anywhere, even outside co-op | Spawns a test copy of your character |
 
 ## Building from source
 
