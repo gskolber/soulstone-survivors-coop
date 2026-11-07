@@ -277,7 +277,7 @@ public class CoopBehaviour : MonoBehaviour
 
     private void HandleDebugHotkeys()
     {
-        if (Keyboard.current == null) return;
+        if (!Plugin.TestKeysOn || Keyboard.current == null) return; // 1.6.2: test keys only with [Debug] TestKeys
         if (Ui.CoopUi.IsTyping) return; // Delete/Insert are also editing keys in the IP field
 
         // Insert = host, Delete = connect to localhost. Debug-only until there's a real UI.

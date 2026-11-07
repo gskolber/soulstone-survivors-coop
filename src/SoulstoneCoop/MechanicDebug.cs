@@ -23,7 +23,7 @@ public static class MechanicDebug
 
     public static void Tick()
     {
-        if (NetworkManager.Role == NetRole.None) return;
+        if (NetworkManager.Role == NetRole.None || !Plugin.TestKeysOn) return;
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f1 = kb.f1Key.isPressed; // 1.6.0: F1 in a client window drops the connection (tests the auto-reconnect)

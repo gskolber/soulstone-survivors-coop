@@ -140,6 +140,7 @@ public static class LevelUpPolicy
     /// straight through ExperienceComponent.LevelUpMultipleTimes, so it is NOT shared as team XP.</summary>
     internal static void DebugHotkey()
     {
+        if (!Plugin.TestKeysOn) return; // 1.6.2
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f6 = kb.f6Key.isPressed;

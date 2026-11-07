@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.6.1.** Played by two people over Steam (up to 1.5); the 1.6 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.6.2.** Played by two people over Steam (up to 1.5); the 1.6 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
@@ -63,7 +63,6 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 - Rejoining a run in progress (`[Coop] AllowRejoin`, on by default since 1.6; older configs keep `false`): a dropped connection reconnects by itself for 45 s and keeps playing the same run with its build; a player who surrendered and rejoins with Fight, or anyone new, joins as a new character.
 - The reconnect doesn't notice if the host went through a portal, restarted or went back to the menu while you were disconnected: you come back into the old stage (or a run the host already left). Surrender and press Fight to join the host's current run.
 - A guest's "on dash dodge" upgrades don't trigger (the dodge itself works since 1.6.1).
-- The [test keys](#test-keys) are active in every co-op session, and Insert, Delete and PageDown even outside co-op.
 - Crusade mode is not supported in co-op.
 - A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
 - Another character's ascension effects need that character's assets in your game; when they aren't loaded, those effects are skipped. The Machinist's rotating crystals don't show on partners yet.
@@ -74,11 +73,10 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 
 Next, in order (details in [`docs/roadmap.md`](docs/roadmap.md)):
 
-1. Test keys behind a setting, off by default.
-2. Reconnecting after the host changed stage, restarted or left the run.
-3. Surrendering and coming back with Fight keeps your build.
-4. Guests' "on dash dodge" upgrades.
-5. Crusade mode.
+1. Reconnecting after the host changed stage, restarted or left the run.
+2. Surrendering and coming back with Fight keeps your build.
+3. Guests' "on dash dodge" upgrades.
+4. Crusade mode.
 
 ## Settings
 
@@ -104,11 +102,12 @@ Next, in order (details in [`docs/roadmap.md`](docs/roadmap.md)):
 | `[Updates] SkippedVersion` | `""` | Set by "Don't remind me for this version"; empty = remind about any newer release |
 | `[Debug] SimulateLatencyMs`, `SimulateJitterMs`, `SimulatePacketLossPercent` | `0` | Simulate a bad network for testing |
 | `[Debug] AutoHost` | `false` | Start hosting by IP as soon as the main menu opens |
+| `[Debug] TestKeys` | `false` | Turn on the [test keys](#test-keys) |
 | `[Debug] PowersProbe` | `false` | Log only: what your own hero spawns for its mini-game (to diagnose a hero whose objects don't show for partners) |
 
 ### Test keys
 
-Used to test the mod. They are still on in this version and will move behind a setting (see [Roadmap](#roadmap)).
+Used to test the mod; off unless `[Debug] TestKeys` is `true` (or the game is started with `--coop-test-keys`, which `tools/test-local` does). F4 and Tab (see [How to play](#how-to-play)) always work.
 
 | Key | Window | What it does |
 |---|---|---|

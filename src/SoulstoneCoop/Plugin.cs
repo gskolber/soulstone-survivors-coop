@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.6.1";
+    public const string PluginVersion = "1.6.2";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -21,6 +21,7 @@ public class Plugin : BasePlugin
     internal static BepInEx.Configuration.ConfigEntry<bool> EndRunWhenHostLeaves = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> SenderClock = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> PowersProbe = null!;
+    internal static BepInEx.Configuration.ConfigEntry<bool> TestKeys = null!;
     internal static BepInEx.Configuration.ConfigEntry<int> MaxPlayers = null!;
     internal static BepInEx.Configuration.ConfigEntry<SteamLobbyType> LobbyType = null!;
     internal static BepInEx.Configuration.ConfigEntry<float> EnemyScalePerPlayer = null!;
@@ -41,7 +42,7 @@ public class Plugin : BasePlugin
         Ui.PartyHud.Bind(Config); // issue #7: party panel
 
         AutoHost = Config.Bind("Debug", "AutoHost", false,
-            "Start hosting automatically when the main menu opens (instead of the Co-op panel or Insert).");
+            "Start hosting automatically when the main menu opens (instead of the Co-op panel).");
         LastAddress = Config.Bind("Coop", "LastAddress", "127.0.0.1",
             "Host address last typed in the Co-op panel (filled in automatically next time).");
 
@@ -60,6 +61,10 @@ public class Plugin : BasePlugin
             "Experimental: place the partner and the enemies by the sender's clock instead of the arrival time (smoother with jitter).");
         PowersProbe = Config.Bind("Debug", "PowersProbe", false,
             "Diagnostic, log only: what your own hero spawns from the game's powers/ folder (mini-game objects), whether it comes from the pool, its parts and its material changes. Sends nothing.");
+        TestKeys = Config.Bind("Debug", "TestKeys", false, // 1.6.2: they used to be always on
+            "Test keys for the mod's developers (F1-F3, F5-F11, Insert, Delete, PageDown: drop the connection, levels, chests, portals, " +
+            "victory, revive, lethal hit...). Off = those keys do nothing. F4 (host lifts the others' pause) and Tab (hide the level-up " +
+            "panel) are features and always work. --coop-test-keys turns them on for one game window.");
         // Phase 9 (docs/fase9-notas.md).
         MaxPlayers = Config.Bind("Coop", "MaxPlayers", 8, new BepInEx.Configuration.ConfigDescription(
             "Host: how many players fit in your co-op session, you included (2-8). Clients past that are refused.",
@@ -154,6 +159,13 @@ public class Plugin : BasePlugin
     /// same Steam account can be told apart.</summary>
     internal static string? NameArg;
 
+    /// <summary>1.6.2: --coop-test-keys (tools/test-local passes it) turns the test keys on for this window.</summary>
+    internal static bool TestKeysArg;
+
+    /// <summary>1.6.2: the debug hotkeys (F1-F3, F5-F11, Insert, Delete, PageDown) only work with [Debug] TestKeys or
+    /// --coop-test-keys. Before, they were live in every co-op session, and Insert/Delete/PageDown even in solo.</summary>
+    internal static bool TestKeysOn => TestKeysArg || (TestKeys != null && TestKeys.Value);
+
     /// <summary>Version sent and checked in the connection handshake.</summary>
     internal static string HandshakeVersion => FakeVersionArg ?? PluginVersion;
 
@@ -166,6 +178,7 @@ public class Plugin : BasePlugin
             else if (args[i] == "--coop-connect" && i + 1 < args.Length) ConnectAddressArg = args[i + 1];
             else if (args[i] == "--coop-fake-version" && i + 1 < args.Length) FakeVersionArg = args[i + 1];
             else if (args[i] == "--coop-name" && i + 1 < args.Length) NameArg = args[i + 1];
+            else if (args[i] == "--coop-test-keys") TestKeysArg = true;
             // Phase 8: network simulation per instance (two games on one PC share the .cfg).
             else if (args[i] == "--coop-sim-latency" && i + 1 < args.Length && int.TryParse(args[i + 1], out var lat)) _simLatency = lat;
             else if (args[i] == "--coop-sim-jitter" && i + 1 < args.Length && int.TryParse(args[i + 1], out var jit)) _simJitter = jit;
@@ -174,8 +187,8 @@ public class Plugin : BasePlugin
         Ui.UiShot.ParseArgs(args);
         Ui.PartyShot.ParseArgs(args); // issue #7, debug
         Ui.MobShot.ParseArgs(args); // issues #6 and #3, debug
-        if (HostArg || ConnectAddressArg != null || FakeVersionArg != null || NameArg != null)
-            Log.LogInfo($"Launch args: host={HostArg} connect={ConnectAddressArg ?? "-"} fakeVersion={FakeVersionArg ?? "-"} name={NameArg ?? "-"}");
+        if (HostArg || ConnectAddressArg != null || FakeVersionArg != null || NameArg != null || TestKeysArg)
+            Log.LogInfo($"Launch args: host={HostArg} connect={ConnectAddressArg ?? "-"} fakeVersion={FakeVersionArg ?? "-"} name={NameArg ?? "-"} testKeys={TestKeysArg}");
     }
 }
 

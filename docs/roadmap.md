@@ -70,6 +70,7 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
 | Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
 | Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
+| **1.6.2** | Teclas de teste (F1-F3, F5-F11, Insert, Delete, PageDown) só com `[Debug] TestKeys` ou `--coop-test-keys` (o `tools/test-local` passa); antes valiam em toda sessão co-op, e Insert/Delete/PageDown até no solo | — |
 | **1.6.1** | Correções do teste da 1.6.0 (`fb7d33f`) | — |
 | Esquiva | Esquiva por dash para convidados: o proxy no host dá dash junto (`pendencias-notas.md`) | — |
 | Reentrada | Foto da build desligada (zerava o inventário do convidado, gravava o perfil e quebrava o painel de nível); o host não congela para quem volta no meio da run nem pausa o painel de nível quando um convidado sai ou cai (`reentrada-notas.md`) | — |
@@ -88,7 +89,7 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 
 ## Agora
 
-A **1.6.1** está no `master` (`fb7d33f`), testada em um PC (dois jogos); a 1.5.0 também foi jogada com um amigo pela Steam. As novidades da 1.6 e 3+ jogadores ainda não foram jogados pela rede.
+A **1.6.1** está no `master` (`fb7d33f`), testada em um PC (dois jogos); a 1.6.2 (teclas de teste atrás de opção) está em teste; a 1.5.0 também foi jogada com um amigo pela Steam. As novidades da 1.6 e 3+ jogadores ainda não foram jogados pela rede.
 
 Revisão de 07/11/2026: cada item abaixo foi conferido no código da `fb7d33f`.
 
@@ -98,11 +99,10 @@ Em ordem de prioridade.
 
 | # | Item | O que o código mostra | Esforço |
 |---|---|---|---|
-| 1 | Teclas de teste atrás de uma opção (`[Debug] Hotkeys`, desligada por padrão; o `tools/test-local` liga) | Nenhuma tecla de teste olha config. F1 (cliente) derruba a conexão, F9 mata o próprio jogador, F6 dá níveis, F2 dá a mecânica do herói; no host F3 (baú), F5 (portal), F7/F8 (especiais, boss), F10 (vitória), F11 (revive todos). Insert, Delete e PageDown (`CoopBehaviour.HandleDebugHotkeys`) valem até fora do co-op: abrem host, conectam em 127.0.0.1, criam um fantasma de teste. Ficam como estão: F4 (host tira a pausa dos outros) e Tab (esconde o painel de nível), que são recursos. README lista todas em "Test keys" | pequeno |
-| 2 | Reconexão quando o host trocou de estágio, reiniciou ou voltou ao menu durante a queda | O `LobbyState` leva só o lugar (um byte) e o `RunId` não muda entre estágios. Na volta, o convidado fica na cena velha; o host o vê `InRun` e o `ResyncToPeer` manda os inimigos e baús do estágio novo para o mapa velho. Com o host no menu, o convidado fica sozinho numa run parada. Caminho: na reconexão o host manda um token do estágio (run + contador de estágio ou cena); diferente do do convidado → ele recarrega pelo `RunStart` atual (como o Lutar); host no menu → o convidado sai da run com aviso | médio |
-| 3 | Desistir e voltar com Lutar mantém a build | `RejoinProgress.SnapshotEnabled = false` desde a 1.6.1: a foto usava `GameModeBaseData.SetDataBasedOnPlayerEntity` (0x4FF600), que é a passagem de estágio do jogo (grava o perfil, troca o `InventoryData` do jogador). Precisa de uma foto própria, só de leitura (nível, upgrades, runas, itens), e de reaplicar sem o caminho de estágio (`reentrada-notas.md`) | médio |
-| 4 | Power-ups "ao esquivar" do convidado | Desde a 1.6.1 a esquiva acontece no proxy do convidado, no host; o `PassiveSkillsComponent` do convidado (`HasSkillOnDashDodge`, `SkillOnDashDodgePowerUpSO`) nunca fica sabendo. Caminho: o host avisa quando um hit no proxy sai com `IsDashDodged`, e o convidado dispara o próprio efeito (`pendencias-notas.md`, "1.6.1") | pequeno a médio |
-| 5 | Modo Crusade | Começa num lobby e troca de mapa no meio; portas e baús já têm base (`fase6-notas.md`, `portais-notas.md`, `proximos-investigacao.md` §6) | grande |
+| 1 | Reconexão quando o host trocou de estágio, reiniciou ou voltou ao menu durante a queda | O `LobbyState` leva só o lugar (um byte) e o `RunId` não muda entre estágios. Na volta, o convidado fica na cena velha; o host o vê `InRun` e o `ResyncToPeer` manda os inimigos e baús do estágio novo para o mapa velho. Com o host no menu, o convidado fica sozinho numa run parada. Caminho: na reconexão o host manda um token do estágio (run + contador de estágio ou cena); diferente do do convidado → ele recarrega pelo `RunStart` atual (como o Lutar); host no menu → o convidado sai da run com aviso | médio |
+| 2 | Desistir e voltar com Lutar mantém a build | `RejoinProgress.SnapshotEnabled = false` desde a 1.6.1: a foto usava `GameModeBaseData.SetDataBasedOnPlayerEntity` (0x4FF600), que é a passagem de estágio do jogo (grava o perfil, troca o `InventoryData` do jogador). Precisa de uma foto própria, só de leitura (nível, upgrades, runas, itens), e de reaplicar sem o caminho de estágio (`reentrada-notas.md`) | médio |
+| 3 | Power-ups "ao esquivar" do convidado | Desde a 1.6.1 a esquiva acontece no proxy do convidado, no host; o `PassiveSkillsComponent` do convidado (`HasSkillOnDashDodge`, `SkillOnDashDodgePowerUpSO`) nunca fica sabendo. Caminho: o host avisa quando um hit no proxy sai com `IsDashDodged`, e o convidado dispara o próprio efeito (`pendencias-notas.md`, "1.6.1") | pequeno a médio |
+| 4 | Modo Crusade | Começa num lobby e troca de mapa no meio; portas e baús já têm base (`fase6-notas.md`, `portais-notas.md`, `proximos-investigacao.md` §6) | grande |
 
 **Problema conhecido, parado por decisão:** cristais giratórios do Machinist no parceiro. NRE mais adiante no `DoActivate` da réplica, depois do pool da projectile skill; o `FieldDump` mostrou os campos checados no começo todos preenchidos (`sempre-ligadas-notas.md`).
 

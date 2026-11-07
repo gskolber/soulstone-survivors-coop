@@ -22,7 +22,7 @@ public static class ChestDebug
 
     public static void Tick()
     {
-        if (NetworkManager.Role == NetRole.None) return;
+        if (NetworkManager.Role == NetRole.None || !Plugin.TestKeysOn) return;
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f3 = kb.f3Key.isPressed;

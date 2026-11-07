@@ -10,7 +10,8 @@
        version again).
     3. Creates <game>\steam_appid.txt for the session: without it Steam relaunches the game and drops the launch
        options. It's removed when the windows are closed (with it, Steam invites don't work).
-    4. Opens window A (--coop-host --coop-name A), then window B (--coop-connect 127.0.0.1 --coop-name B).
+    4. Opens window A (--coop-host --coop-name A), then window B (--coop-connect 127.0.0.1 --coop-name B), both with
+       --coop-test-keys (the F-key test keys, README "Test keys").
     5. When every window is closed: copies the logs to dist\test-local\<date-time>\
        (LogOutput.log = A, LogOutput.1.log = B, ...).
 
@@ -124,7 +125,7 @@ try {
     for ($i = 0; $i -lt $Players; $i++) {
         $name = $names[$i]
         $role = if ($i -eq 0) { '--coop-host' } else { '--coop-connect 127.0.0.1' }
-        $argLine = "-screen-fullscreen 0 -screen-width $Width -screen-height $Height $role --coop-name $name"
+        $argLine = "-screen-fullscreen 0 -screen-width $Width -screen-height $Height $role --coop-name $name --coop-test-keys"
         Step "Window $name ($role)"
         $procs += Start-Process -FilePath $Exe -ArgumentList $argLine -WorkingDirectory $GameDir -PassThru
         if ($i -lt $Players - 1) {

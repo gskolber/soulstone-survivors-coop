@@ -18,7 +18,7 @@ public static class SpecialsDebug
 
     public static void Tick(float unscaledDeltaTime)
     {
-        if (NetworkManager.Role == NetRole.None) return;
+        if (NetworkManager.Role == NetRole.None || !Plugin.TestKeysOn) return;
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f7 = kb.f7Key.isPressed, f8 = kb.f8Key.isPressed;

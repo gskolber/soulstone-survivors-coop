@@ -55,7 +55,7 @@ Teste com amigo pela Steam: o convidado se rendeu (pausa, Desistir), voltou ao m
 - **Reconexão automática (`NetworkManager`):** conexão estabelecida que cai (não recusa, não o botão Desconectar) arma 45 s de tentativas a cada 6 s, no mesmo IP ou no mesmo lobby/host da Steam (`SteamLobby.ReconnectTo`, que entra de novo no lobby mesmo no meio da run: o host só aceita membros). Só ações do jogador cancelam (`CancelReconnect`: Desconectar, Entrar, Hospedar, Convidar).
 - **Sem recarregar:** enquanto reconecta, `CoopLife.HostLostTick` não encerra a run (aviso `nt.reconnecting` com os segundos). De volta, o Hello/LobbyState InRun faz o host reenviar inimigos, baús e objetos (`ResyncToPeer`) e recriar fantasma e proxy; as marionetes antigas já tinham sido apagadas na queda. Se a janela acabar, a run termina como antes.
 - **Limite conhecido:** se o host trocou de estágio (portal) ou reiniciou enquanto o convidado estava fora, o convidado volta na run antiga.
-  - Conferido na 1.6.1: o `LobbyState` só leva o lugar e o `RunId` é o mesmo em todos os estágios, então nada percebe a diferença. O host vê o convidado `InRun` e o `ResyncToPeer` manda os inimigos e baús do estágio novo para o mapa velho. Com o host no menu, o convidado fica sozinho numa run parada (sem queda de conexão, o `HostLostTick` não age). Item 2 do `roadmap.md`.
+  - Conferido na 1.6.1: o `LobbyState` só leva o lugar e o `RunId` é o mesmo em todos os estágios, então nada percebe a diferença. O host vê o convidado `InRun` e o `ResyncToPeer` manda os inimigos e baús do estágio novo para o mapa velho. Com o host no menu, o convidado fica sozinho numa run parada (sem queda de conexão, o `HostLostTick` não age). Item 1 do `roadmap.md`.
 
 ### Como testar
 

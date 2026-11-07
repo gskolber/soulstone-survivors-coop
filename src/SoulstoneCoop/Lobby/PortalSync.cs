@@ -351,6 +351,7 @@ public static class PortalSync
     /// (MinTimeForEndlessRush / MinTimeForBossRush) or the profile hasn't unlocked them.</summary>
     private static void HandleHotkey()
     {
+        if (!Plugin.TestKeysOn) return; // 1.6.2
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f5 = kb.f5Key.isPressed;

@@ -1003,6 +1003,7 @@ public static class CoopLife
 
     private static void HandleHotkeys()
     {
+        if (!Plugin.TestKeysOn) return; // 1.6.2
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f9 = kb.f9Key.isPressed, f10 = kb.f10Key.isPressed, f11 = kb.f11Key.isPressed;
