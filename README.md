@@ -7,7 +7,7 @@ An unofficial fan mod, not affiliated with or endorsed by the game's developers.
 <p align="center"><img src="docs/media/coop-ui-demo.gif" alt="The Co-op tab: inviting through Steam, direct IP and a lobby of 5 players" width="720"></p>
 <p align="center"><sub><a href="docs/media/coop-ui-demo.mp4">Video (mp4)</a></sub></p>
 
-> **Status: 1.6.2.** Played by two people over Steam (up to 1.5); the 1.6 additions and 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
+> **Status: 1.7.** Played by two people over Steam; 3+ players have only been tested on one PC so far. See [What works](#what-works) and [Known limitations](#known-limitations).
 
 ## Install
 
