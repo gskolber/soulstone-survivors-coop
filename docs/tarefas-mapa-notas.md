@@ -53,6 +53,7 @@ Os ids são os mesmos dos baús, então `RewardDespawn`, `RewardStates` e `Rewar
 - O ícone flutuante (`WorldSpaceMapTaskIcon`) não é copiado; o convidado vê o marcador e o ícone do minimapa.
 - O painel de objetivos do convidado recebe o timer ou o contador da tarefa pelo `Loot/TaskObjectiveSync.cs` (`TaskObjective = 135`, 2 Hz). O host lê `_timerObjective` / `_eliminationObjective` da tarefa em andamento; o convidado cria o mesmo tipo de objetivo, com o mesmo id (o texto é o do jogo), e o completa quando a tarefa acaba (ou após 5 s sem notícia).
 - O som de início da tarefa só toca no host.
+- Corrigido depois da revisão do PR #9: um convidado que caía, desistia ou tinha o proxy recriado em cima do marcador deixava o proxy velho no `InteractingEntity`, e a tarefa começava sozinha (bosses incluídos). Detalhes em `baus-notas.md`, "proxy velho no `InteractingEntity`".
 
 ## Como testar
 

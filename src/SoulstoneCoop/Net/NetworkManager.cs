@@ -310,7 +310,8 @@ public static class NetworkManager
     // where it is: still in the run (CoopLife waits instead of ending it) -> the host's usual resync rebuilds the
     // enemies, ghosts and proxy, no reload; in the menu -> the host's AllowRejoin sends the run with its build.
 
-    private const float ReconnectWindow = 45f, ReconnectEvery = 6f;
+    internal const float ReconnectWindow = 45f; // CoopLife: how long the host keeps counting a dropped guest in the run
+    private const float ReconnectEvery = 6f;
     private static (string? Address, ulong Lobby, ulong Host) _lastTarget;
     private static bool _clientWasConnected;
     private static float _reconnectUntil, _nextReconnectAt;

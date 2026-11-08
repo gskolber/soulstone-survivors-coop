@@ -426,17 +426,22 @@ public static class ChestSync
 
         if (!hostInside)
         {
-            bool curIsProxy = cur != null && Enemies.RemoteProxy.IsProxy(cur);
+            // Without the host on it, only the host's player is ever put here by the game (OnTriggerEnter wants
+            // IsPlayer()), so anything else is ours: a living guest's proxy, or a stale one. A proxy recycled or
+            // rebuilt mid-open (guest left, surrendered, reconnecting) has already left RemoteProxy's lookup, and a
+            // destroyed one reads as null to Unity while the field still holds it (the game's OnUpdate only tests the
+            // raw pointer): both would keep the game's timer running with nobody on it.
+            bool curSet = !ReferenceEquals(cur, null);
             if (guests > 0 && firstProxy != null)
             {
-                if (cur == null || (curIsProxy && !curCounted))
+                if (!curCounted)
                 {
                     trig.InteractingEntity = firstProxy;
                     trig.InteractingEntityTargetTransform = firstProxy.transform;
                 }
                 _proxyDriven++;
             }
-            else if (curIsProxy)
+            else if (curSet && (cur == null || local != null || Enemies.RemoteProxy.IsProxy(cur))) // no local player: can't tell, proxies only
             {
                 trig.InteractingEntity = null;
                 trig.InteractingEntityTargetTransform = null;

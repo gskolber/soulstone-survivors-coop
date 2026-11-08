@@ -178,6 +178,7 @@ public static class CoopSession
     private static bool _hooked;
     private static bool _helloSent, _placeSent;
     private static LobbyPlace _lastSentPlace;
+    private static int _lastSentRunId, _lastSentStage;
     private static float _infoTimer;
 
     // Transient on-screen notice (CoopUi banner).
@@ -245,6 +246,8 @@ public static class CoopSession
             var p = new NetDataWriter();
             p.Put((byte)PacketType.LobbyState);
             p.Put((byte)r.Place);
+            p.Put(r.MatchRunId);
+            p.Put(r.MatchStage);
             NetworkManager.SendRelayedTo(newSlot, r.Slot, p, DeliveryMethod.ReliableOrdered);
         }
     }
@@ -369,19 +372,60 @@ public static class CoopSession
 
         RunSync.HostRejoinTick(); // phase 8, AllowRejoin only
         RunSync.ClientRunTick();  // 1.6.0: a RunStart held until the menu has settled
+        ClientStaleRunTick();     // back from a reconnect, but the host moved on
     }
 
+    /// <summary>LobbyState: type u8 | place u8 | run id i32 | stage i32 (RunSync.LocalMatch: which of the host's matches).</summary>
     private static void SendPlace(bool force)
     {
         if (!Connected) return;
         var place = LocalPlace;
-        if (!force && _placeSent && place == _lastSentPlace) return;
+        RunSync.LocalMatch(out int runId, out int stage);
+        if (!force && _placeSent && place == _lastSentPlace && runId == _lastSentRunId && stage == _lastSentStage) return;
         var w = new NetDataWriter();
         w.Put((byte)PacketType.LobbyState);
         w.Put((byte)place);
+        w.Put(runId);
+        w.Put(stage);
         NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
         _lastSentPlace = place;
+        _lastSentRunId = runId;
+        _lastSentStage = stage;
         _placeSent = true;
+    }
+
+    // ---------------- back from a reconnect into a stale run (client) ----------------
+
+    private const float StaleRunConfirm = 1f; // s the mismatch must hold (ordering slack around portals/restarts)
+    private static float _staleSince = -1f;
+
+    /// <summary>Client, every frame: the host's LobbyState says it's in another run or stage than our match (it took a
+    /// portal, restarted, or went to the menu while we were reconnecting: our match is the old one). Resyncing the host's
+    /// new content into our old map is wrong, so this run ends the way a lost host ends it (CoopLife.BeginStaleRun:
+    /// Surrender); back in the menu, the host's AllowRejoin sends its current run (RunSync.HostRejoinTick), or Fight asks.
+    /// A portal/restart we're following has StageTransition set, and an end already under way is left alone.</summary>
+    private static void ClientStaleRunTick()
+    {
+        var host = Host;
+        bool stale = false;
+        if (NetworkManager.Role == NetRole.Client && LocalInRun && !StageTransition && host != null && host.PlaceKnown)
+        {
+            RunSync.LocalMatch(out int runId, out int stage);
+            if (runId != 0)
+            {
+                if (host.Place == LobbyPlace.Menu) stale = true;
+                else if (host.Place == LobbyPlace.InRun && host.MatchRunId != 0)
+                    stale = host.MatchRunId != runId || host.MatchStage != stage;
+            }
+        }
+        if (!stale) { _staleSince = -1f; return; }
+        if (_staleSince < 0f) { _staleSince = Time.unscaledTime; return; }
+        if (Time.unscaledTime - _staleSince < StaleRunConfirm) return;
+        _staleSince = float.MaxValue; // once per mismatch (reset when it clears)
+        RunSync.LocalMatch(out int ours, out int ourStage);
+        Life.CoopLife.BeginStaleRun(host!.Place == LobbyPlace.Menu
+            ? $"the host is in the menu (our run {ours}/{ourStage})"
+            : $"the host is in run {host.MatchRunId}/{host.MatchStage}, ours is {ours}/{ourStage}");
     }
 
     // ---------------- identity ----------------
@@ -450,25 +494,44 @@ public static class CoopSession
     public static void OnLobbyState(NetDataReader r)
     {
         var place = (LobbyPlace)r.GetByte();
+        int runId = r.GetInt(), stage = r.GetInt();
         var p = Get(PacketRouter.From);
         if (p == null) return;
         var prev = p.Place;
+        bool wasStale = p.StaleRun;
         p.Place = place;
-        if (prev == place) return;
-        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][session] Slot {p.Slot} ({p.Name}): {prev} -> {place} (local {LocalPlace}).");
+        p.PlaceKnown = true;
+        p.MatchRunId = runId;
+        p.MatchStage = stage;
+        // Host: InRun, but not in our current run/stage (back from a reconnect after our portal or restart). Both ids
+        // must be known: a run we never announced (run id 0) can't be told apart.
+        bool stale = false;
+        if (place == LobbyPlace.InRun && NetworkManager.Role == NetRole.Host && (LocalInRun || LocalLoading))
+        {
+            RunSync.LocalMatch(out int ourRun, out int ourStage);
+            stale = ourRun != 0 && runId != 0 && (runId != ourRun || stage != ourStage);
+        }
+        p.StaleRun = stale;
+        if (prev == place && wasStale == stale) return;
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][session] Slot {p.Slot} ({p.Name}): {prev} -> {place} run {runId}/{stage}" +
+                                 $"{(stale ? " (STALE: not our run/stage, no resync; its run ends there and it rejoins from the menu)" : "")} (local {LocalPlace}).");
         if ((place == LobbyPlace.Loading || place == LobbyPlace.Transition) && !(prev == LobbyPlace.Loading || prev == LobbyPlace.Transition))
             p.ChangingSince = Time.unscaledTime;
 
         // That player's match just started next to ours: resend every live enemy to it (this used to happen on
         // PeerConnected, when the connection was made inside the run). Duplicates are ignored by the client.
         // Not while our own old scene is still up (portal taken): those enemies are about to be gone.
-        if (place == LobbyPlace.InRun) RunSync.NoteInRun(p.Slot);
-        if (prev == LobbyPlace.InRun && place == LobbyPlace.Menu) RunSync.NoteLeftRun(p.Slot); // 1.6.0: no auto pull-back
-        if (place == LobbyPlace.InRun && LocalInRun && !StageTransition && NetworkManager.Role == NetRole.Host)
+        // A stale player isn't noted either way: once its old run ends and it is in the menu, HostRejoinTick sends it ours.
+        bool entered = place == LobbyPlace.InRun && !stale && (prev != LobbyPlace.InRun || wasStale);
+        if (entered) RunSync.NoteInRun(p.Slot);
+        if (prev == LobbyPlace.InRun && place == LobbyPlace.Menu && !wasStale) RunSync.NoteLeftRun(p.Slot); // 1.6.0: no auto pull-back
+        if (entered && LocalInRun && !StageTransition && NetworkManager.Role == NetRole.Host)
         {
             Enemies.HostEnemySync.ResyncToPeer(p.Slot, "player entered the run");
             Loot.ChestSync.ResyncToPeer(p.Slot); // and the chests / ore still up
         }
+        if (entered) Life.CoopLife.OnPlayerBackInRun(p.Slot);
+        if (prev == place) return;
 
         // Client: the host's old scene is gone. Everything it sent from that scene came before this packet (same
         // ordered channel), so spawns/loot still around are stale (portal or Restart inside the run).
