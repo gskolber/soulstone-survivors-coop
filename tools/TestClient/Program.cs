@@ -60,6 +60,7 @@ sealed class Bot
 
     byte _slot = 255;
     byte _hostPlace = Menu, _place = Menu, _sentPlace = 255;
+    int _hostRunId, _hostStage; // the host's match (its LobbyState): ours says the same, the bot always follows it
     double _inRunAt = -1;
     float[]? _hostPos;
     // The host's Hello, reused (with our own name) so the ghost builds as a real character.
@@ -121,6 +122,8 @@ sealed class Bot
                     break;
                 case LobbyState:
                     _hostPlace = r.GetByte();
+                    _hostRunId = r.GetInt();
+                    _hostStage = r.GetInt();
                     break;
                 case RunStart:
                     _place = Loading;
@@ -179,6 +182,8 @@ sealed class Bot
             var w = new NetDataWriter();
             w.Put(LobbyState);
             w.Put(_place);
+            w.Put(_place == Menu ? 0 : _hostRunId);
+            w.Put(_place == Menu ? 0 : _hostStage);
             _peer.Send(w, DeliveryMethod.ReliableOrdered);
             _sentPlace = _place;
             Console.WriteLine($"[bot{_index}] place {_place}");

@@ -132,6 +132,17 @@ Muda o formato de pacote: host e convidados precisam da mesma build. Para public
 - Os gatilhos de **iniciar** uma `MapTask` (o objeto da tarefa no mapa) continuam só no host: o convidado não começa uma tarefa sozinho. O mesmo mecanismo serve, porque também é um `InteractableTriggerObject`.
 - A voz de "abrindo baú" do personagem do convidado não tocava. **1.4:** na primeira vez que o convidado pisa na cópia, o personagem dele fala (`VoiceOverManager.TreasureChestOpen`, ou `PlayMiningStart` para minério, reconhecido pelo nome `-Mine` / `Mineral`). No host, quem fala continua sendo o personagem do host, mesmo com só convidados em cima.
 - `InteractableAutoRewardObject` (caverna dos goblins, Cruzada) não é rastreado.
+  - Conferido depois da revisão do PR #9: ele herda de `InteractableRewardObject` e entra no `UpdateAll` (mesma `Instances`), então o prefix que pula o `UpdateAll` no convidado também o pula. Mas o único chamador do `InteractableAutoRewardObject.Setup` (0x454C50) é `GoblinCaveGameManager.<RegisterChestObject>` (0x4345F0, chamada em 0x434715; achado varrendo os `call` do `GameAssembly.dll`), e sem o `Setup` o `InteractableTriggerObject.Setup` nunca liga o colisor. A caverna dos goblins é da Cruzada, que o co-op bloqueia (`RunSync.AllowFight`, `AllowRestart`). Nos modos que o co-op aceita, o convidado não tem nenhum objeto de recompensa próprio (os spawners estão parados), o mesmo que na 1.1.0. Nada mudou no código; quando a Cruzada entrar, o prefix tem que pular só as cópias do host.
+
+## Depois da revisão do PR #9: proxy velho no `InteractingEntity`
+
+Com só convidados em cima, o proxy do primeiro vira `InteractingEntity`. Ele só era tirado se `RemoteProxy.IsProxy(cur)`, mas o `RemoveProxy` tira o proxy do mapa antes (convidado caiu, desistiu, ou o proxy foi recriado no meio da abertura). O proxy velho ficava ali e o `OnUpdate` do jogo continuava contando: o baú abria sem ninguém em cima, ou a tarefa do mapa começava e soltava os bosses.
+
+- Agora, com o host fora e nenhum convidado vivo em cima, sai qualquer `InteractingEntity` que não seja o jogador local do host. Só o host o jogo põe ali (`OnTriggerEnter` quer `IsPlayer()`), então o resto é nosso.
+- Proxy destruído: para o Unity ele é nulo, mas o campo ainda guarda o ponteiro e o `OnUpdate` só testa o ponteiro. O teste agora é `ReferenceEquals(cur, null)`.
+- Com convidados em cima, qualquer coisa que não seja um proxy contado é trocada pelo proxy do primeiro.
+- Sem jogador local (não deveria acontecer numa partida), só proxies saem, como antes.
+- Não há outro caminho com o mesmo problema: este é o único lugar onde o mod põe um proxy num campo do jogo que conta tempo. Os alvos dos inimigos o `RemoveProxy` já solta (`ReleaseTargets`). As tarefas do mapa usam o mesmo código.
 
 ## Roteiro de teste
 

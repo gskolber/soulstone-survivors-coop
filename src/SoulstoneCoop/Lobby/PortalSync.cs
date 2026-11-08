@@ -40,6 +40,7 @@ public static class PortalSync
     private static float _pendingTimer;
     private static PortalKind _pendingKind;
     private static string? _pendingMap;
+    private static int _pendingRunId, _pendingStage; // client: the host's run and the stage its portal leads to
     private static bool _pendingIsRequest;
 
     private static float _lastRequestTime = -10f;
@@ -98,10 +99,14 @@ public static class PortalSync
             }
             else
             {
+                // PortalTransition (Endless/BossRush): kind u8 | map str | run id i32 | stage i32 (the stage it leads to)
+                RunSync.LocalMatch(out int runId, out int stage);
                 var w = new NetDataWriter();
                 w.Put((byte)PacketType.PortalTransition);
                 w.Put((byte)kind);
                 w.Put(map!);
+                w.Put(runId);
+                w.Put(stage);
                 NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
                 CoopSession.Notice(Ui.Loc.Msg("nt.portal_going", ("portal", Label(kind)), ("others", CoopSession.OthersLabel), ("map", map)), 5f);
                 Plugin.StaticLog.LogInfo($"[SoulstoneCoop][portal] Host took the {kind} portal: next map {map}, partner told.");
@@ -193,6 +198,7 @@ public static class PortalSync
         var kind = (PortalKind)r.GetByte();
         string map = r.GetString();
         if (kind == PortalKind.Restart) { RunSync.OnHostRestart(r); return; }
+        int runId = r.GetInt(), stage = r.GetInt();
         if (NetworkManager.Role != NetRole.Client) return;
 
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][portal] Client: host took the {kind} portal to {map} (local {CoopSession.LocalPlace}).");
@@ -206,6 +212,8 @@ public static class PortalSync
         CoopSession.BeginStageTransition($"following the host's {kind} portal");
         _pendingKind = kind;
         _pendingMap = map;
+        _pendingRunId = runId;
+        _pendingStage = stage;
         _pendingIsRequest = false;
         _pendingTimer = FollowTimeout;
         TryPending();
@@ -240,6 +248,7 @@ public static class PortalSync
         }
         // The game just drew its own Endless map: LoadNextScene cancels that load and schedules the host's.
         GameManagerUtil.LoadNextScene(map, NextStageDelay, false);
+        RunSync.OnClientFollowedStage(_pendingRunId, _pendingStage); // the next match is that stage of the host's run
         CoopSession.Notice(Ui.Loc.Msg("nt.portal_follow", ("portal", Label(kind))), 5f);
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][portal] Client followed the host's {kind} portal: LoadNextScene({map}).");
     }

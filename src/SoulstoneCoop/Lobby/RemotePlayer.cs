@@ -13,6 +13,14 @@ public sealed class RemotePlayer
     public readonly byte Slot;
     public PlayerInfo Info = new();
     public LobbyPlace Place = LobbyPlace.Menu;
+    /// <summary>A LobbyState from this player arrived on this connection (Place is no longer the default).</summary>
+    public bool PlaceKnown;
+    /// <summary>Which of the host's matches that player is in (RunSync.LocalMatch: run id, stage), from its
+    /// LobbyState. 0 = none / not known.</summary>
+    public int MatchRunId, MatchStage;
+    /// <summary>Host: that player says InRun, but in another run or stage than ours (it came back from a
+    /// reconnect after we took a portal or restarted): not in our run for any module, and not resynced.</summary>
+    public bool StaleRun;
 
     // ---- ghost (CoopBehaviour / VisualGhostFactory) ----
     public GameObject? Ghost;
@@ -37,7 +45,7 @@ public sealed class RemotePlayer
     public RemotePlayer(byte slot) => Slot = slot;
 
     public bool IsHost => Slot == Net.Players.HostSlot;
-    public bool InRun => Place == LobbyPlace.InRun;
+    public bool InRun => Place == LobbyPlace.InRun && !StaleRun;
     public bool ChangingScene => Place == LobbyPlace.Loading || Place == LobbyPlace.Transition;
 
     /// <summary>1.6.1: when this player last started changing scene (Menu -> Loading/Transition), unscaled time.</summary>

@@ -76,7 +76,7 @@ public static class CoopLife
     {
         if (_hooked) return;
         _hooked = true;
-        NetworkManager.PeerDisconnected += _ => OnPeerDisconnected();
+        NetworkManager.PeerDisconnected += OnPeerDisconnected;
         Players.Left += ForgetSlot;
     }
 
@@ -113,6 +113,8 @@ public static class CoopLife
         _lastSentDownMask = -1;
         _pendingPortalTimer = 0f;
         _hostLost = false;
+        _staleRun = false;
+        _away.Clear();
         _armDepth = 0;
         _cameraSwapped = false;
         _savedTarget = null;
@@ -120,6 +122,10 @@ public static class CoopLife
     }
 
     private static bool Connected => NetworkManager.HasPeer;
+
+    /// <summary>Host: someone is in the run with us, or a guest of this run dropped and may still come back (its
+    /// reconnect window): the co-op down/revive rules go on meanwhile (AwayTick).</summary>
+    private static bool Partnered => Connected || (CoopRole.IsHostSide && _away.Count > 0);
 
     private static bool InMatch =>
         _matchStarted && GameManagerUtil.HasGameManager && GameState.LocalPlayerEntity != null;
@@ -151,7 +157,7 @@ public static class CoopLife
 
     internal static bool TryArm(Entity target)
     {
-        if (LocalDowned || RunEnding || !Connected || !InMatch) return false;
+        if (LocalDowned || RunEnding || !Partnered || !InMatch) return false;
         var local = GameState.LocalPlayerEntity;
         if (local == null || target.Pointer != local.Pointer) return false;
         var h = local._health;
@@ -201,12 +207,14 @@ public static class CoopLife
             }
             if (_enterPending) { _enterPending = false; EnterDownedVisuals(); }
             if (LocalDowned) { UpdateSpectator(); HoldDownedBody(); }
-            if (CoopRole.IsHostSide && Connected && InMatch) HostTick(dt);
+            AwayTick();
+            if (CoopRole.IsHostSide && Partnered && InMatch) HostTick(dt);
             if (_pendingPortalTimer > 0f) RetryPendingPortal(dt);
             HostLostTick(dt);
+            StaleRunTick(dt);
             FeedbackTick(dt);
-            DownedMarkers.Tick(Connected && InMatch && !RunEnding);
-            DownedPose.Tick(Connected && InMatch && !RunEnding); // 1.6.0: lying on the ground on every screen
+            DownedMarkers.Tick(Partnered && InMatch && !RunEnding);
+            DownedPose.Tick(Partnered && InMatch && !RunEnding); // 1.6.0: lying on the ground on every screen
             HandleHotkeys();
         }
         catch (Exception ex)
@@ -540,8 +548,10 @@ public static class CoopLife
         CollectParticipants(dt);
         if (RunEnding) { SendLife(force: false); return; }
 
+        // A guest that dropped out of the run counts as it was (alive or down) while its reconnect window is open.
         bool allDown = true;
         foreach (var p in Run) if (!p.Down) { allDown = false; break; }
+        foreach (var a in _away) if (!a.Down) { allDown = false; break; }
         if (allDown)
         {
             Array.Clear(_progress);
@@ -889,16 +899,72 @@ public static class CoopLife
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][life] Request {kind}: {ex}"); }
     }
 
-    private static void OnPeerDisconnected()
+    private static void OnPeerDisconnected(byte slot)
     {
         try
         {
+            NoteAway(slot);
             // Alone now: solo rules. A downed player has nobody to revive it (the host keeps going while a client is left).
-            if (LocalDowned && InMatch && !NetworkManager.HasPeer) FinalDeathLocal("everyone else disconnected");
+            // Unless that client may still come back (AwayTick ends it when the window closes).
+            if (LocalDowned && InMatch && !Partnered) FinalDeathLocal("everyone else disconnected");
             // Phase 8: the client's run can't go on without the host (no enemies, no spawns): end it cleanly.
             if (CoopRole.IsClientSide && InMatch && !RunEnding) BeginHostLost();
         }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][life] OnPeerDisconnected: {ex}"); }
+    }
+
+    // =====================================================================================
+    // Host: a guest dropped out of the run, maybe for its reconnect window (NetworkManager.ReconnectWindow)
+    // =====================================================================================
+
+    private struct Away
+    {
+        public byte Slot;   // its old slot (the reconnect may get another one): log only
+        public bool Down;   // as it was when it dropped
+        public float Until;
+    }
+
+    private static readonly List<Away> _away = new();
+
+    /// <summary>Host, PeerDisconnected (before Players.Left drops its state): a guest that was in our run, not dead for
+    /// real, still counts for "everyone down" for the reconnect window, as it was. A dropped guest tries again for that
+    /// long and, if it gets back, comes back into this run (OnPlayerBackInRun). Not when we're the ones stopping.</summary>
+    private static void NoteAway(byte slot)
+    {
+        if (!CoopRole.IsHostSide || NetworkManager.Transport == null || !InMatch || RunEnding) return;
+        if (Lobby.CoopSession.Get(slot)?.InRun != true || Enemies.RemoteProxy.IsKilled(slot)) return;
+        bool found = false, down = false;
+        foreach (var p in Run) if (p.Slot == slot) { found = true; down = p.Down; break; }
+        if (!found) return;
+        _away.Add(new Away { Slot = slot, Down = down, Until = Time.unscaledTime + NetworkManager.ReconnectWindow });
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Host: slot {slot} dropped out of the run ({(down ? "down" : "alive")}): " +
+                                 $"still counted for {NetworkManager.ReconnectWindow:F0} s, in case it reconnects.");
+    }
+
+    /// <summary>Host, CoopSession.OnLobbyState: a player entered our run (InRun, same run and stage). If someone is
+    /// waited for, that's most likely it (its LobbyState comes before its Hello, so who it is isn't known yet).</summary>
+    internal static void OnPlayerBackInRun(byte slot)
+    {
+        if (!CoopRole.IsHostSide || _away.Count == 0) return;
+        var a = _away[0];
+        _away.RemoveAt(0);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Host: slot {slot} is in the run: no longer waiting for the dropped slot {a.Slot}.");
+    }
+
+    /// <summary>Host, every frame: the windows that ran out. With nobody left at all and us down, the end that
+    /// OnPeerDisconnected held back.</summary>
+    private static void AwayTick()
+    {
+        if (_away.Count == 0) return;
+        if (!CoopRole.IsHostSide || !InMatch) { _away.Clear(); return; }
+        float now = Time.unscaledTime;
+        for (int i = _away.Count - 1; i >= 0; i--)
+        {
+            if (now < _away[i].Until) continue;
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Host: the dropped slot {_away[i].Slot} didn't come back in time.");
+            _away.RemoveAt(i);
+        }
+        if (_away.Count == 0 && LocalDowned && !Connected && !RunEnding) FinalDeathLocal("everyone else disconnected");
     }
 
     // =====================================================================================
@@ -992,6 +1058,49 @@ public static class CoopLife
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][life] Host lost: ending the client's run (Surrender).");
         RunEnding = true;
         if (LocalDowned) { LocalDowned = false; RestoreCamera(); }
+        RunMirrored(() => GameManagerUtil.Surrender());
+    }
+
+    // =====================================================================================
+    // Client back from a reconnect into a stale run (CoopSession.ClientStaleRunTick, docs/reentrada-notas.md)
+    // =====================================================================================
+
+    private static bool _staleRun;
+    private static float _staleRunTimer;
+    private static bool _staleWaitingLogged;
+
+    /// <summary>Client: the host is in another run or stage (or in the menu) than our match. Ends ours like a lost host
+    /// (Surrender, after the notice and any open level-up/pause screen), as leaving alone: the host's packets of its
+    /// new stage aren't ours. Back in the menu, the host's AllowRejoin brings us into its current run.</summary>
+    internal static void BeginStaleRun(string why)
+    {
+        if (_staleRun || !CoopRole.IsClientSide || !InMatch || RunEnding || LeftAlone || LocalPlayerKilled()) return;
+        if (VictoryReached()) { Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Stale run ({why}), but already won here: the Home portal is ours."); return; }
+        _staleRun = true;
+        _staleRunTimer = 0f;
+        _staleWaitingLogged = false;
+        Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Stale run after a reconnect: {why}. Ending ours; the host's run comes back from the menu.");
+        Lobby.CoopSession.Notice(Ui.Loc.Msg("nt.stale_run"), 10f);
+    }
+
+    private static void StaleRunTick(float dt)
+    {
+        if (!_staleRun) return;
+        if (!InMatch || RunEnding || LeftAlone || LocalPlayerKilled()) { _staleRun = false; return; }
+        _staleRunTimer += dt;
+        if (_staleRunTimer < HostLostDelay) return;
+        if (PauseSync.LocalReason != PauseReason.None)
+        {
+            if (!_staleWaitingLogged)
+            {
+                _staleWaitingLogged = true;
+                Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Stale run: waiting for the local {PauseSync.LocalReason} screen to close before ending.");
+            }
+            return;
+        }
+        _staleRun = false;
+        Plugin.StaticLog.LogInfo("[SoulstoneCoop][life] Stale run: ending the client's run (Surrender).");
+        PrepareToLeaveAlone(); // RunEnding + LeftAlone, back from the spectator camera
         RunMirrored(() => GameManagerUtil.Surrender());
     }
 

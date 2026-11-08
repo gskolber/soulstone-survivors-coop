@@ -29,9 +29,29 @@ public static class RunSync
         public List<string> Affixes = new();
         public int RunId;                    // 1.4: which run (new on Fight/Restart, kept across stages)
         public bool Rejoin;                  // 1.4: the host's AllowRejoin (guests keep their build for a comeback)
+        public int Stage;                    // which stage of that run (0 at Fight/Restart, +1 per Endless/BossRush portal)
     }
 
     private static RunParams? _clientRun;      // client: the host's run we're loading into (affix override)
+    private static int _clientRunId, _clientStage; // client: the host's run and stage our match belongs to (0 = none)
+
+    /// <summary>Which of the host's matches we are in (LobbyState): the host's own run and stage; a client's, the host's
+    /// run and stage it loaded or followed. Run id 0 = none, or not known. A guest back from a reconnect whose match
+    /// isn't the host's current one is in a stale run (CoopSession.ClientStaleRunTick, docs/reentrada-notas.md).</summary>
+    internal static void LocalMatch(out int runId, out int stage)
+    {
+        if (NetworkManager.Role == NetRole.Host) { runId = _hostRun?.RunId ?? 0; stage = _hostRun?.Stage ?? 0; }
+        else { runId = _clientRunId; stage = _clientStage; }
+    }
+
+    /// <summary>Client: we followed the host's portal (PortalSync.ClientFollow) to that stage of its run.</summary>
+    internal static void OnClientFollowedStage(int runId, int stage)
+    {
+        if (runId == 0) return; // an old packet without it: keep what we had
+        _clientRunId = runId;
+        _clientStage = stage;
+    }
+
     private static bool _holding;
     private static int _affixOverrides;
 
@@ -148,10 +168,17 @@ public static class RunSync
             HasAffixes = _hostRun.HasAffixes,
             RunId = _hostRun.RunId,
             Rejoin = _hostRun.Rejoin,
+            Stage = _hostRun.Stage + 1,
         };
         p.Affixes.AddRange(_hostRun.Affixes);
         _hostRun = p;
+        _hostSceneChange = true;
     }
+
+    /// <summary>Host: a portal or Restart of ours is changing scene with nobody connected (no StageTransition then:
+    /// PortalSync/AfterHostRestart only start one with a partner). The run goes on in the next scene, so OnLocalRunLeft
+    /// keeps _hostRun for a partner that comes back (reconnect) or joins later. Cleared once used, and at StartMatch.</summary>
+    private static bool _hostSceneChange;
 
     private static float _lastJoinRequest = -99f;
 
@@ -230,6 +257,7 @@ public static class RunSync
         foreach (var a in p.Affixes) w.Put(a);
         w.Put(p.RunId);
         w.Put(p.Rejoin);
+        w.Put(p.Stage);
     }
 
     private static RunParams ReadParams(NetDataReader r)
@@ -246,11 +274,12 @@ public static class RunSync
         for (int i = 0; i < n; i++) p.Affixes.Add(r.GetString());
         p.RunId = r.GetInt();
         p.Rejoin = r.GetBool();
+        p.Stage = r.GetInt();
         return p;
     }
 
     private static string Describe(RunParams p) =>
-        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}] run={p.RunId}";
+        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}] run={p.RunId}/{p.Stage}";
 
     // =====================================================================================
     // Client: follow the host
@@ -364,6 +393,8 @@ public static class RunSync
         Global.MasteryDifficultyTier = p.MasteryTier;
         Global.MasteryDynamicLevel = p.MasteryLevel;
         _clientRun = p;
+        _clientRunId = p.RunId;
+        _clientStage = p.Stage;
         _hostProgression = null;
         if (p.HasAffixes) _affixOverrides = 0;
     }
@@ -490,6 +521,7 @@ public static class RunSync
         {
             AfterHostFight(scene);
             if (CoopSession.Connected) CoopSession.BeginStageTransition("restart");
+            else _hostSceneChange = true;
             return;
         }
 
@@ -555,6 +587,7 @@ public static class RunSync
         if (_clientRun != null && _clientRun.HasAffixes && NetworkManager.Role == NetRole.Client) LogAppliedAffixes(_clientRun);
         _clientRun = null;
         _holding = false;
+        _hostSceneChange = false;
     }
 
     internal static void OnLocalRunLeft()
@@ -562,8 +595,11 @@ public static class RunSync
         // Restart from the end screen: the next scene is already on its way and still needs _clientRun
         // (the host's affixes); OnLocalMatchStarted clears it.
         if (CoopSession.StageTransition) { _holding = false; return; }
+        // Host alone through a portal / Restart: same run in the next scene (its id and stage stay for a partner).
+        if (_hostSceneChange && NetworkManager.Role == NetRole.Host) { _hostSceneChange = false; _holding = false; return; }
         _clientRun = null;
         _hostRun = null;
+        _clientRunId = _clientStage = 0;
         _holding = false;
     }
 
