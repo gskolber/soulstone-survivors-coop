@@ -174,6 +174,33 @@ public static class AscensionFx
         return false;
     }
 
+    // Receiver bounds: these packets are relayed from any peer. Per sender slot at most RecvPerSecond (the sender's
+    // MaxPerSecond plus headroom for packets the network bunches up); a light going back to the original always passes
+    // (dropping it would leave the tint on). Values are clamped to what the game's own effects use.
+    private const int RecvPerSecond = MaxPerSecond + MaxPerSecond / 2;
+    private const int MaxNameLength = 256, MaxCachedNames = 256;
+    private const float MaxRel = 60f, MaxTime = 120f, MinScale = 0.01f, MaxScale = 20f;
+    private const float MaxColor = 2f, MinTemperature = 1000f, MaxTemperature = 20000f, MaxIntensity = 10f, MaxDuration = 10f;
+    private static readonly float[] RecvWindowStart = new float[256];
+    private static readonly int[] RecvInWindow = new int[256];
+    private static int _dropped;
+
+    private static bool RecvBudget(byte slot)
+    {
+        float now = Time.unscaledTime;
+        if (now - RecvWindowStart[slot] >= 1f || now < RecvWindowStart[slot]) { RecvWindowStart[slot] = now; RecvInWindow[slot] = 0; }
+        if (RecvInWindow[slot] >= RecvPerSecond) return false;
+        RecvInWindow[slot]++;
+        return true;
+    }
+
+    private static bool Finite(Vector3 v) => float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
+
+    private static Color ClampColor(Color col) => new(Mathf.Clamp(col.r, 0f, MaxColor), Mathf.Clamp(col.g, 0f, MaxColor),
+        Mathf.Clamp(col.b, 0f, MaxColor), Mathf.Clamp01(col.a));
+
+    private static bool FiniteColor(Color col) => float.IsFinite(col.r) && float.IsFinite(col.g) && float.IsFinite(col.b) && float.IsFinite(col.a);
+
     public static void OnPacket(NetDataReader r)
     {
         byte kind = r.GetByte();
@@ -193,13 +220,38 @@ public static class AscensionFx
         }
         _recv++;
         byte from = PacketRouter.From;
+        bool lightBack = kind == KindLight && (flags & FlagToOriginal) != 0;
+        if (!lightBack && !RecvBudget(from))
+        {
+            if (_dropped++ % 100 == 0) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] Slot {from} sends more than {RecvPerSecond} effects a second: dropping ({_dropped} so far).");
+            return;
+        }
+        if (name.Length > MaxNameLength) return;
+        if (kind == KindLight && !lightBack)
+        {
+            if (!FiniteColor(lc) || !FiniteColor(fc) || !float.IsFinite(temp) || !float.IsFinite(intensity) || !float.IsFinite(env) || !float.IsFinite(duration)) return;
+            lc = ClampColor(lc); fc = ClampColor(fc);
+            temp = Mathf.Clamp(temp, MinTemperature, MaxTemperature);
+            intensity = Mathf.Clamp(intensity, 0f, MaxIntensity);
+            env = Mathf.Clamp(env, 0f, MaxIntensity);
+            duration = Mathf.Clamp(duration, 0f, MaxDuration);
+        }
+        else if (kind != KindLight)
+        {
+            if (!Finite(rel) || !float.IsFinite(a) || !float.IsFinite(b) || !float.IsFinite(c)) return;
+            rel = Vector3.ClampMagnitude(rel, MaxRel); // the sender only sends what's within 60 of its player
+            a = Mathf.Clamp(a, -MaxTime, MaxTime); b = Mathf.Clamp(b, -MaxTime, MaxTime); c = Mathf.Clamp(c, -MaxTime, MaxTime);
+            scale = float.IsFinite(scale) ? Mathf.Clamp(scale, MinScale, MaxScale) : 1f;
+            float rl = rot.x * rot.x + rot.y * rot.y + rot.z * rot.z + rot.w * rot.w;
+            rot = float.IsFinite(rl) && rl > 1e-6f ? Quaternion.Normalize(rot) : Quaternion.identity;
+        }
         var who = CoopSession.Get(from);
         var ghost = who?.Ghost;
         if (ghost == null || !CoopSession.LocalInRun || !GameManagerUtil.HasGameManager) return;
         try
         {
             _replaying = true;
-            if (kind == KindLight) { PlayLight(from, (flags & FlagToOriginal) != 0, lc, fc, temp, intensity, env, duration); return; }
+            if (kind == KindLight) { PlayLight(from, lightBack, lc, fc, temp, intensity, env, duration); return; }
             var local = GameState.LocalPlayerEntity;
             if (local != null && (ghost.transform.position - local.transform.position).sqrMagnitude > MaxDistance * MaxDistance) return;
             var gt = ghost.transform;
@@ -248,9 +300,25 @@ public static class AscensionFx
         finally { _replaying = false; }
     }
 
+    // Prefab scans (FindObjectsOfTypeAll) for names not cached yet: a token bucket, so a stream of new names can't
+    // hitch every frame; over it, or past MaxCachedNames distinct names, the effect is just not shown.
+    private const float ScanTokensPerSecond = 2f, MaxScanTokens = 6f;
+    private static float _scanTokens = MaxScanTokens, _scanTokensAt;
+
+    private static bool TakeScanToken()
+    {
+        float now = Time.unscaledTime;
+        _scanTokens = Mathf.Min(MaxScanTokens, _scanTokens + Mathf.Max(0f, now - _scanTokensAt) * ScanTokensPerSecond);
+        _scanTokensAt = now;
+        if (_scanTokens < 1f) return false;
+        _scanTokens -= 1f;
+        return true;
+    }
+
     private static VfxReferences? ResolveVfx(string name)
     {
         if (VfxCache.TryGetValue(name, out var cached)) return cached;
+        if (VfxCache.Count >= MaxCachedNames || !TakeScanToken()) { _missing++; return null; }
         VfxReferences? found = null;
         try
         {
@@ -268,18 +336,22 @@ public static class AscensionFx
         if (found == null)
         {
             _missing++;
-            if (LoggedMissing.Add(name)) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][ascension] Effect '{name}' isn't loaded here: not shown.");
+            if (LoggedMissing.Count < MaxCachedNames && LoggedMissing.Add(name)) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][ascension] Effect '{name}' isn't loaded here: not shown.");
         }
         return found;
     }
 
     /// <summary>The world light while that partner's mechanic is on: a processor of our own per partner, so its
-    /// "back to original" returns what that same processor changed.</summary>
+    /// "back to original" returns what that same processor changed.
+    /// A second "light on" while it's on reuses that partner's processor (its own ChangeLight replaces the running
+    /// transition) and keeps the originals it holds: a new processor made then took the tinted light as its original,
+    /// so the next "back to original" left the tint on. "Back" only acts while that partner's light is on (it isn't
+    /// rate-limited, so a repeat is a no-op).</summary>
     private static void PlayLight(byte slot, bool toOriginal, Color lc, Color fc, float temp, float intensity, float env, float duration)
     {
         if (toOriginal)
         {
-            if (Lights.TryGetValue(slot, out var p)) { p.ChangeLight(true); _played++; }
+            if (LitSlots.Remove(slot) && Lights.TryGetValue(slot, out var p)) { p.ChangeLight(true); _played++; }
             return;
         }
         var fb = new WorldLightFeedback
@@ -292,17 +364,50 @@ public static class AscensionFx
             TransitionDuration = duration,
             TransitionCurve = AnimationCurve.Linear(0f, 0f, 1f, 1f),
         };
-        var proc = new WorldLightProcessor(fb);
-        Lights[slot] = proc;
-        proc.ChangeLight(false);
+        if (Lights.TryGetValue(slot, out var proc) && proc != null)
+        {
+            var saved = new Originals(proc);
+            proc.WorldLightFeedback = fb;
+            proc.ChangeLight(false);
+            saved.WriteTo(proc); // in case ChangeLight(false) records the (already tinted) light as the original
+        }
+        else
+        {
+            proc = new WorldLightProcessor(fb);
+            Lights[slot] = proc;
+            proc.ChangeLight(false);
+        }
+        LitSlots.Add(slot);
         _played++;
+    }
+
+    private static readonly HashSet<byte> LitSlots = new();
+
+    /// <summary>What a WorldLightProcessor restores on ChangeLight(true).</summary>
+    private readonly struct Originals
+    {
+        private readonly Color _light, _sky, _equator, _fog;
+        private readonly float _temperature, _intensity;
+
+        internal Originals(WorldLightProcessor p)
+        {
+            _light = p.OriginalLightColor; _sky = p.OriginalSkyLightColor; _equator = p.OriginalEquatorLightColor;
+            _fog = p.OriginalVolumetricFogColor; _temperature = p.OriginalLightTemperature; _intensity = p.OriginalLightIntensity;
+        }
+
+        internal void WriteTo(WorldLightProcessor p)
+        {
+            p.OriginalLightColor = _light; p.OriginalSkyLightColor = _sky; p.OriginalEquatorLightColor = _equator;
+            p.OriginalVolumetricFogColor = _fog; p.OriginalLightTemperature = _temperature; p.OriginalLightIntensity = _intensity;
+        }
     }
 
     /// <summary>Our scene changed or the partner left: its light goes back (the next scene starts with its own).</summary>
     internal static void ResetLights(bool restore)
     {
-        if (restore) foreach (var p in Lights.Values) { try { p.ChangeLight(true); } catch { } }
+        if (restore) foreach (var kv in Lights) { if (!LitSlots.Contains(kv.Key)) continue; try { kv.Value.ChangeLight(true); } catch { } }
         Lights.Clear();
+        LitSlots.Clear();
     }
 
     public static void Tick(float dt)
@@ -324,7 +429,8 @@ public static class AscensionFx
     {
         Players.Left += slot =>
         {
-            if (Lights.TryGetValue(slot, out var p)) { try { p.ChangeLight(true); } catch { } Lights.Remove(slot); }
+            if (Lights.TryGetValue(slot, out var p)) { if (LitSlots.Contains(slot)) { try { p.ChangeLight(true); } catch { } } Lights.Remove(slot); }
+            LitSlots.Remove(slot);
         };
         int windows = 0, hooks = 0, failed = 0;
         foreach (var type in MechanicTypes)

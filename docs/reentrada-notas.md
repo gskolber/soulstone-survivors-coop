@@ -82,6 +82,8 @@ O `SetDataBasedOnPlayerEntity` (0x4FF600) é a passagem de estágio do jogo, nã
 
 Sem perda prática: uma queda reconecta na mesma run sem recarregar (a build fica). Só "Desistir e depois Lutar" volta como personagem novo. Uma foto sem efeitos colaterais pediria montar o `GameModeBaseData` à mão a partir dos componentes (nível, XP, power-ups, runas, inventário).
 
+Depois do merge do PR #9: o `Lobby/RejoinProgress.cs` foi removido (era só esse caminho desligado; nada mais lia o id da run nem o `AllowRejoin` guardados ali) junto com a chave `nt.rejoin_build`. O `RunStart` continua levando o id da run e o `AllowRejoin` (formato igual). Uma foto nova, só de leitura, começa do zero (item 2 do `roadmap.md`).
+
 ### 1.6.1: o host não pausa mais por causa do convidado
 
 - **Barreira de carregamento:** o host congelou 41 s enquanto B voltava com Lutar (`Others still loading - holding our match`). A barreira agora só espera quem começou a carregar antes da partida do host começar (`CoopSession.AnyRemoteLoadingWithUs`, `RemotePlayer.ChangingSince`): começo de run, portal, reinício. Quem entra depois carrega sozinho.

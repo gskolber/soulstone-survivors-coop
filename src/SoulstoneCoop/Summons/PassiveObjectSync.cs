@@ -319,7 +319,7 @@ public static partial class PassiveObjectSync
     {
         string key = side + "|" + name;
         LoggedLayout.TryGetValue(key, out int n);
-        if (n >= 2) return;
+        if (n >= 2 || (n == 0 && LoggedLayout.Count >= 2 * MaxTemplateNames)) return;
         LoggedLayout[key] = n + 1;
         var sb = new System.Text.StringBuilder();
         int shown = 0;
@@ -384,7 +384,9 @@ public static partial class PassiveObjectSync
             uint h = r.GetUInt();
             var st = new PartState { On = r.GetBool(), Scale = new Vector3(r.GetFloat(), r.GetFloat(), r.GetFloat()) };
             _recvParts++;
-            if (m == null) continue;
+            if (m == null || !Finite(st.Scale)) continue;
+            if (m.PartStates.Count >= MaxParts && !m.PartStates.ContainsKey(h)) continue; // the owner never has more
+            st.Scale = ClampScale(st.Scale, MaxPartScale);
             m.PartStates[h] = st;
             if (m.Go != null && !m.IsMarker) ApplyPart(m, h, st);
         }
@@ -445,6 +447,26 @@ public static partial class PassiveObjectSync
     private static readonly HashSet<string> LoggedMissing = new();
     private static float _remoteRunStart = -1f;
 
+    // Receiver bounds: spawns are relayed from any peer, so the copies follow the owner's own limits (MaxOwned per
+    // player, MaxParts...) and the per-name caches stop growing past MaxTemplateNames distinct names (the rest are
+    // markers). A real hero has a few dozen prefab names at most.
+    private const int MaxNameLength = 128;
+    private const int MaxTemplateNames = 256;
+    private const float MaxMirrorScale = 20f, MaxPartScale = 100f, MaxRadius = 30f;
+    private static int _capDrops;
+
+    private static bool Finite(Vector3 v) => float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
+
+    private static Vector3 ClampScale(Vector3 v, float max) =>
+        new(Mathf.Clamp(v.x, -max, max), Mathf.Clamp(v.y, -max, max), Mathf.Clamp(v.z, -max, max));
+
+    private static int MirrorsOf(byte slot)
+    {
+        int n = 0;
+        foreach (var m in Remote.Values) if (m.Slot == slot) n++;
+        return n;
+    }
+
     private static int KeyOf(byte slot, ushort id) => (slot << 16) | id;
 
     public static void OnSpawn(NetDataReader r)
@@ -458,9 +480,17 @@ public static partial class PassiveObjectSync
         _recvSpawns++;
         byte from = PacketRouter.From;
         if ((type >= Types.Length && type != PowersType) || !Players.IsPresent(from) || !CoopSession.LocalInRun) return;
+        if (string.IsNullOrEmpty(name) || name.Length > MaxNameLength || !Finite(pos) || !float.IsFinite(yaw)) return;
+        scale = float.IsFinite(scale) && scale > 0.01f ? Mathf.Min(scale, MaxMirrorScale) : 1f;
+        if (!float.IsFinite(radius) || radius > MaxRadius) radius = 0f; // AreaRadius sends 0 past that too
         int key = KeyOf(from, id);
         if (!Remote.TryGetValue(key, out var m))
         {
+            if (MirrorsOf(from) >= MaxOwned) // the owner never tracks more
+            {
+                if (_capDrops++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] Slot {from} sent more than {MaxOwned} objects: '{name}' ignored.");
+                return;
+            }
             m = new Mirror { Slot = from, Id = id, Type = type, Name = name, Target = pos, Yaw = yaw, Scale = scale };
             Remote[key] = m;
         }
@@ -495,6 +525,7 @@ public static partial class PassiveObjectSync
             ushort id = r.GetUShort();
             var pos = new Vector3(r.GetFloat(), r.GetFloat(), r.GetFloat());
             float yaw = r.GetFloat();
+            if (!Finite(pos) || !float.IsFinite(yaw)) continue;
             if (Remote.TryGetValue(KeyOf(PacketRouter.From, id), out var m)) { m.Target = pos; m.Yaw = yaw; }
         }
     }
@@ -540,20 +571,21 @@ public static partial class PassiveObjectSync
 
     private static void Build(Mirror m)
     {
-        var template = ResolveTemplate(m.Type, m.Name);
+        var template = ResolveTemplate(m.Type, m.Name, out bool deferred);
         // 1.4.1: another character's objects come with that character's skill tree, which this game never loaded.
         // Load the owner's tree from Resources once (the objects are referenced from its talents) and look again.
         // 1.4.1 (second test): the mini-game objects themselves live under Resources "powers/" (the binding stone is
         // powers/demonicbinding/demonicbindingstone, loaded by path when the mechanic starts): load that folder once.
-        if (template == null && (EnsurePowersLoaded() || ReloadPowersIfStale()))
-            template = ResolveTemplate(m.Type, m.Name, force: true);
-        if (template == null && EnsureOwnerTreeLoaded(m.Slot))
-            template = ResolveTemplate(m.Type, m.Name, force: true);
+        if (template == null && !deferred && (EnsurePowersLoaded() || ReloadPowersIfStale()))
+            template = ResolveTemplate(m.Type, m.Name, out deferred, force: true);
+        if (template == null && !deferred && EnsureOwnerTreeLoaded(m.Slot))
+            template = ResolveTemplate(m.Type, m.Name, out deferred, force: true);
+        if (deferred) return; // over the prefab-scan budget: tried again next tick
         m.IsMarker = template == null;
         if (template == null)
         {
             _missing++;
-            if (LoggedMissing.Add(m.Name))
+            if (LoggedMissing.Count < MaxTemplateNames && LoggedMissing.Add(m.Name))
                 Plugin.StaticLog.LogWarning($"[SoulstoneCoop][passives] No prefab for slot {m.Slot}'s {TypeName(m.Type)} '{m.Name}' here (another character's asset): a marker stands in.");
             // 1.3.1: that character's own assets aren't loaded in this game: a ring and a beam in its player's color.
             m.Go = BuildMarker(m);
@@ -689,8 +721,25 @@ public static partial class PassiveObjectSync
 
     private static readonly Dictionary<string, float> MissAt = new();
 
-    private static GameObject? ResolveTemplate(byte type, string name, bool force = false)
+    // Prefab scans (FindObjectsOfTypeAll) on a name not seen recently: a token bucket, so a stream of new names can't
+    // turn into a hitch every frame. A mirror over the budget waits (deferred) and tries again on a later tick.
+    private const float ScanTokensPerSecond = 2f, MaxScanTokens = 4f;
+    private static float _scanTokens = MaxScanTokens, _scanTokensAt;
+
+    private static bool TakeScanToken()
     {
+        float now = Time.unscaledTime;
+        _scanTokens = Mathf.Min(MaxScanTokens, _scanTokens + Mathf.Max(0f, now - _scanTokensAt) * ScanTokensPerSecond);
+        _scanTokensAt = now;
+        if (_scanTokens < 1f) return false;
+        _scanTokens -= 1f;
+        return true;
+    }
+
+    private static GameObject? ResolveTemplate(byte type, string name, out bool deferred, bool force = false)
+    {
+        deferred = false;
+        if (type == PowersType) return PowersPrefab(name); // 1.5.0: generic, by powers/ prefab name (never in Templates)
         string key = type + "|" + name;
         if (Templates.TryGetValue(key, out var cached))
         {
@@ -700,7 +749,8 @@ public static partial class PassiveObjectSync
             // aren't loaded here (another character's) spawn over and over: a hitch per spawn.
             if (MissAt.TryGetValue(key, out float at) && Time.unscaledTime - at < 20f) return null;
         }
-        if (type == PowersType) return PowersPrefab(name); // 1.5.0: generic, by powers/ prefab name
+        else if (Templates.Count >= MaxTemplateNames) return null; // too many distinct names: the rest stay markers
+        if (!TakeScanToken()) { deferred = true; return null; }
         GameObject? found = null;
         try
         {

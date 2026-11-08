@@ -547,6 +547,7 @@ public static class EnemySyncStartMatchPatch
             ClientPuppets.OnMatchStarted(mapId);
             RemoteProxy.OnMatchStarted();
             Skills.RemoteCaster.OnMatchStarted();
+            AscensionSync.OnMatchStarted();
             Life.CoopLife.OnMatchStarted();
             EnemyScaling.OnMatchStarted();
             Lobby.CoopSession.OnLocalMatchStarted();

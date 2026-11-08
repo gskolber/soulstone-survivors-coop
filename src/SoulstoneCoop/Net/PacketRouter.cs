@@ -133,11 +133,23 @@ public static class PacketRouter
         Dispatch(reader, from);
     }
 
+    private static int _dispatchErrors;
+
     private static void Dispatch(NetDataReader reader, byte from)
     {
         var prev = From;
         From = from;
+        // The type byte, peeked before the handler moves the reader (a Relayed envelope is already unwrapped here).
+        var type = reader.AvailableBytes > 0 ? (PacketType)reader.RawData[reader.Position] : 0;
         try { DispatchCore(reader); }
+        catch (Exception ex)
+        {
+            // A short / malformed packet (another mod version, or a bad peer) must not throw out of PollEvents: that
+            // skips the rest of the poll and every later Tick this frame. Drop it; log the first 10, then 1 in 100.
+            int n = ++_dispatchErrors;
+            if (n <= 10 || n % 100 == 0)
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop] Dropped a {type} packet from slot {from} ({ex.GetType().Name}: {ex.Message}; {n} dropped so far).");
+        }
         finally { From = prev; }
     }
 

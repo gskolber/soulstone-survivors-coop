@@ -191,6 +191,17 @@ public static class AscensionSync
     // Receiver
     // =====================================================================================
 
+    // Receiver bounds: ModelState is relayed from any peer. The sender sends at most MaxModels models and one
+    // attachment (SiegeExpertComponent's); past that it's dropped. Each ghost builds at most MaxBuiltPerGhost extra
+    // models / attachments, and the prefab caches stop at MaxCachedNames distinct names (the rest are not shown).
+    private const int MaxModels = 4, MaxAttachments = 1, MaxNameLength = 256;
+    private const int MaxBuiltPerGhost = 16, MaxCachedNames = 256;
+    private const float MaxModelScale = 10f, MaxAttachOffset = 10f;
+
+    private static float SaneScale(float s) => float.IsFinite(s) ? Mathf.Clamp(s, 0f, MaxModelScale) : 1f;
+
+    private static bool SaneName(string s) => s.Length <= MaxNameLength;
+
     public static void OnPacket(NetDataReader r)
     {
         int n = r.GetByte();
@@ -199,9 +210,11 @@ public static class AscensionSync
         {
             string name = r.GetString(), path = r.GetString();
             float scale = r.GetFloat();
-            w.Models.Add(new ModelInfo(name, path, scale));
+            if (w.Models.Count >= MaxModels || name.Length == 0 || !SaneName(name) || !SaneName(path)) continue;
+            w.Models.Add(new ModelInfo(name, path, SaneScale(scale)));
         }
-        w.RootScale = r.GetFloat();
+        float root = r.GetFloat();
+        w.RootScale = float.IsFinite(root) ? root : 1f; // clamped to 0.3..4 where it's applied
         int na = r.GetByte();
         for (int i = 0; i < na; i++)
         {
@@ -209,7 +222,11 @@ public static class AscensionSync
             var pos = new Vector3(r.GetFloat(), r.GetFloat(), r.GetFloat());
             var rot = new Quaternion(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat());
             float scale = r.GetFloat();
-            w.Attachments.Add(new Attachment(name, parent, pos, rot, scale));
+            if (w.Attachments.Count >= MaxAttachments || name.Length == 0 || !SaneName(name) || !SaneName(parent)) continue;
+            if (!float.IsFinite(pos.x) || !float.IsFinite(pos.y) || !float.IsFinite(pos.z)) continue;
+            float rl = rot.x * rot.x + rot.y * rot.y + rot.z * rot.z + rot.w * rot.w;
+            rot = float.IsFinite(rl) && rl > 1e-6f ? Quaternion.Normalize(rot) : Quaternion.identity;
+            w.Attachments.Add(new Attachment(name, parent, Vector3.ClampMagnitude(pos, MaxAttachOffset), rot, SaneScale(scale)));
         }
         var sb = new System.Text.StringBuilder();
         foreach (var m in w.Models) sb.Append(m.Name).Append('@').Append(m.Scale.ToString("F2")).Append(';');
@@ -266,6 +283,7 @@ public static class AscensionSync
             }
             if (!g.Extra.TryGetValue(m.Name, out var extra))
             {
+                if (g.Extra.Count >= MaxBuiltPerGhost) continue; // far more names than any character has
                 extra = BuildExtra(r, ghost, m);
                 g.Extra[m.Name] = extra;
             }
@@ -315,6 +333,7 @@ public static class AscensionSync
         {
             if (!g.Attached.TryGetValue(a.Name, out var go))
             {
+                if (g.Attached.Count >= MaxBuiltPerGhost) continue;
                 go = BuildAttachment(r, a);
                 g.Attached[a.Name] = go;
             }
@@ -366,7 +385,7 @@ public static class AscensionSync
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] Resolving attachment '{a.Name}': {ex.Message}"); }
         if (prefab == null)
         {
-            if (LoggedMissing.Add("+" + a.Name)) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] No prefab for slot {r.Slot}'s attachment '{a.Name}'.");
+            if (LoggedMissing.Count < MaxCachedNames && LoggedMissing.Add("+" + a.Name)) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] No prefab for slot {r.Slot}'s attachment '{a.Name}'.");
             return null;
         }
         var holder = new GameObject("SoulstoneCoop_AttachmentBuild");
@@ -394,7 +413,7 @@ public static class AscensionSync
         if (prefab == null)
         {
             _buildFailures++;
-            if (LoggedMissing.Add(m.Name))
+            if (LoggedMissing.Count < MaxCachedNames && LoggedMissing.Add(m.Name))
                 Plugin.StaticLog.LogWarning($"[SoulstoneCoop][ascension] No prefab for slot {r.Slot}'s model '{m.Name}' (path '{m.Path}'): its main model stays.");
             return (null, null);
         }
@@ -416,6 +435,7 @@ public static class AscensionSync
             if (cached != null) return cached;
             if (PrefabMissAt.TryGetValue(key, out float at) && Time.unscaledTime - at < 20f) return null; // scanned lately
         }
+        else if (PrefabCache.Count >= MaxCachedNames) return null; // too many distinct names: not shown
         PlayerPrefabReferences? found = null;
         try
         {
@@ -454,6 +474,10 @@ public static class AscensionSync
         g.Extra.Clear();
         g.Attached.Clear();
     }
+
+    /// <summary>StartMatch (EnemySyncStartMatchPatch): last run's wishes go, so the new run's ghost doesn't show last
+    /// run's ascension model until the partner's first ModelState (on change + every 3 s) says what it wears now.</summary>
+    internal static void OnMatchStarted() => WantedBySlot.Clear();
 
     /// <summary>A player left the session: its wishes and models go (the models with its ghost).</summary>
     internal static void Forget(byte slot)

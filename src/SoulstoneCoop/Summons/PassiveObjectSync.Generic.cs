@@ -35,6 +35,7 @@ public static partial class PassiveObjectSync
     private const byte PowersType = 255;
     private const float ScanInterval = 0.5f;
     private const int MaxRenderers = 24, MaxPropsPerRenderer = 12;
+    private const float MaxMatValue = 1000f; // receiver: HDR colours / intensities stay well under this
 
     private static readonly Dictionary<string, GameObject> PowersByName = new();
 
@@ -325,8 +326,10 @@ public static partial class PassiveObjectSync
             bool color = r.GetBool();
             var v = color ? new Vector4(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat()) : new Vector4(r.GetFloat(), 0, 0, 0);
             _recvMats++;
-            if (m == null) continue;
+            if (m == null || !float.IsFinite(v.x) || !float.IsFinite(v.y) || !float.IsFinite(v.z) || !float.IsFinite(v.w)) continue;
             ulong key = ((ulong)pathHash << 32) | nameHash;
+            if (m.MatStates.Count >= MaxRenderers * MaxPropsPerRenderer && !m.MatStates.ContainsKey(key)) continue; // the owner's cap
+            v = Vector4.Max(Vector4.Min(v, Vector4.one * MaxMatValue), Vector4.one * -MaxMatValue);
             var mv = new MatValue { Color = color, V = v };
             m.MatStates[key] = mv;
             if (m.Go != null && !m.IsMarker) ApplyMat(m, key, mv);
@@ -389,6 +392,7 @@ public static partial class PassiveObjectSync
     // Plays that state at that time (only if it isn't in it already, so the 3 s refresh doesn't restart it).
 
     private const int MaxAnimators = 8, MaxLayers = 3;
+    private const float MaxAnimSpeed = 10f; // receiver clamp of the animator speed
 
     private struct AnimValue
     {
@@ -463,8 +467,10 @@ public static partial class PassiveObjectSync
             byte layer = r.GetByte();
             var v = new AnimValue { Hash = r.GetInt(), Time = r.GetFloat(), Speed = r.GetFloat() };
             _recvAnims++;
-            if (m == null) continue;
+            if (m == null || layer >= MaxLayers || !float.IsFinite(v.Time) || !float.IsFinite(v.Speed)) continue;
             ulong key = ((ulong)pathHash << 8) | layer;
+            if (m.AnimStates.Count >= MaxAnimators * MaxLayers && !m.AnimStates.ContainsKey(key)) continue; // the owner's cap
+            v.Speed = Mathf.Clamp(v.Speed, -MaxAnimSpeed, MaxAnimSpeed);
             m.AnimStates[key] = v;
             if (m.Go != null && !m.IsMarker) ApplyAnim(m, key, v);
         }
