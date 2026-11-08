@@ -61,7 +61,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 ## Known limitations
 
 - Rejoining a run in progress (`[Coop] AllowRejoin`, on by default since 1.6; older configs keep `false`): a dropped connection reconnects by itself for 45 s and keeps playing the same run with its build; a player who surrendered and rejoins with Fight, or anyone new, joins as a new character.
-- The reconnect doesn't notice if the host went through a portal, restarted or went back to the menu while you were disconnected: you come back into the old stage (or a run the host already left). Surrender and press Fight to join the host's current run.
+- If the host went through a portal, restarted or went back to the menu while you were disconnected, your old match ends a few seconds after you reconnect and you're brought into the host's current run as a new character.
 - A guest's "on dash dodge" upgrades don't trigger (the dodge itself works since 1.6.1).
 - Crusade mode is not supported in co-op.
 - A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
@@ -73,10 +73,9 @@ The full list and design notes are in [`docs/roadmap.md`](docs/roadmap.md).
 
 Next, in order (details in [`docs/roadmap.md`](docs/roadmap.md)):
 
-1. Reconnecting after the host changed stage, restarted or left the run.
-2. Surrendering and coming back with Fight keeps your build.
-3. Guests' "on dash dodge" upgrades.
-4. Crusade mode.
+1. Keeping your build when you come back with Fight, or after the host changed stage while you were away.
+2. Guests' "on dash dodge" upgrades.
+3. Crusade mode.
 
 ## Settings
 
