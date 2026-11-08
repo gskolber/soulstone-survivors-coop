@@ -97,6 +97,7 @@ Entrou a versão mínima e isolada, só no host:
   - no Steam, o lobby fica aberto durante a run.
 - **Com a opção desligada:** nada muda (o host nem guarda a run sem parceiro).
 - **Não vem junto:** o nível, as skills e os itens que o cliente tinha. Eles só existem no jogo do cliente, e a run dele foi encerrada na queda (item 3).
+- **1.4:** agora vem, se o jogo do cliente não fechou: ele guarda a build a cada 5 s e a devolve ao jogo na volta (`reentrada-notas.md`).
 
 **Desenho da reconexão "de verdade" (fase futura):**
 

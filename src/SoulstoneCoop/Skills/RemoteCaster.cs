@@ -29,9 +29,15 @@ public static class RemoteCaster
         public string Key = "";
         public Skill Skill = null!;
         public IntPtr Ptr;
+        public int Rejects; // 1.4.1: consecutive CastSkill == false
+        public float TickUntil; // 1.6.0: a TemporaryRotatingSkill's OnUpdate runs until then (copies aren't AddSkill'ed)
         public Il2CppSystem.Func<bool>? ChannelFunc;
         public Il2CppSystem.Func<Skill, Vector3>? FrontFunc, GroundFunc;
         public Vector3 Front, Ground;
+        public Vector3 FrontTarget, GroundTarget; // latest SkillChannelAim; Front/Ground glide towards them
+        public bool HasFrontTarget, HasGroundTarget;
+        public bool AlwaysOn;              // runs every frame from Tick (AlwaysOnSync), not from casts
+        public AlwaysOnSpec? AppliedSpec;
         public float AppliedScale = -1f;
         public string Kind = "";
     }
@@ -48,11 +54,18 @@ public static class RemoteCaster
         public readonly Dictionary<string, Copy> Copies = new();
         public readonly HashSet<string> FailedKeys = new();
         public readonly Dictionary<string, bool> Channeling = new();
+        public readonly Dictionary<string, AlwaysOnSpec> AlwaysOnWanted = new(); // that player's always-on skills (SkillAlwaysOn)
         public IntPtr AnimGhostPtr;
+        public int AnimModelVersion;
         public Animator[]? GhostAnimators;
     }
 
     private static readonly Dictionary<byte, Caster> Casters = new();
+
+    /// <summary>What shapes one always-on skill of a partner (AlwaysOnSync): level, extra projectiles, rotation speed,
+    /// projectile cooldown and the adjusted scale (applied like a cast's, ApplyFidelity).</summary>
+    internal sealed record AlwaysOnSpec(int Type, byte Level, int Extra, float Speed, float Cooldown, float Scale);
+    private static int _alwaysOnErrors;
     private static readonly HashSet<IntPtr> CasterPtrs = new();
     private static readonly HashSet<IntPtr> StatsPtrs = new();
     private static Team _originalTeam;
@@ -70,6 +83,48 @@ public static class RemoteCaster
     public static int OpenChannels { get { int n = 0; foreach (var c in Casters.Values) foreach (var on in c.Channeling.Values) if (on) n++; return n; } }
 
     internal static bool IsCaster(Entity? e) => e != null && CasterPtrs.Count > 0 && CasterPtrs.Contains(e.Pointer);
+
+    /// <summary>For the casting watchdog's report: every caster's copies, "slot:key".</summary>
+    internal static string DescribeCopies()
+    {
+        var parts = new List<string>();
+        foreach (var c in Casters.Values) foreach (var k in c.Copies.Keys) parts.Add($"{c.Slot}:{k}");
+        return string.Join(", ", parts);
+    }
+
+    // ---------------- safety net: no real unit may come out of a replica ----------------
+
+    internal static int ReplicaSummonsRemoved;
+    private static readonly List<Entity> ReplicaSummons = new();
+    private static readonly HashSet<string> LoggedReplicaSummons = new();
+
+    /// <summary>UnitUtil.SetupSummonStats with one of our casters as the summoner (SummonOwnerCapturePatch): a skill
+    /// copy brought a real unit into this world. It would fight here with its own damage (and an ascension's unit,
+    /// with a stand-in for an owner, broke the local player's casting). It goes back to the pool next frame.</summary>
+    internal static void OnReplicaSummon(Entity summoned)
+    {
+        if (summoned == null) return;
+        ReplicaSummons.Add(summoned);
+        string name = EnemyPrefabKeys.StripClone(summoned.gameObject.name);
+        if (LoggedReplicaSummons.Add(name))
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] A replayed skill summoned '{name}' here: removed (replicas are visual only; the partner's units come through SummonSync).");
+    }
+
+    private static void RemoveReplicaSummons()
+    {
+        if (ReplicaSummons.Count == 0) return;
+        foreach (var e in ReplicaSummons)
+        {
+            try
+            {
+                if (e == null || !e.gameObject.activeInHierarchy) continue;
+                e.Recycle();
+                ReplicaSummonsRemoved++;
+            }
+            catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Removing a replica's summon: {ex.Message}"); }
+        }
+        ReplicaSummons.Clear();
+    }
     internal static bool IsCasterStats(StatsComponent? s) => s != null && StatsPtrs.Count > 0 && StatsPtrs.Contains(s.Pointer);
 
     public static void EnsureHooked()
@@ -87,6 +142,8 @@ public static class RemoteCaster
     {
         // A new match: the casters and their copies from the previous scene are gone with it.
         ForgetAll();
+        CastSync.ClearSummonCache();
+        ReplicaSummons.Clear();
         _matchStarted = true;
     }
 
@@ -137,6 +194,12 @@ public static class RemoteCaster
         {
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] RemoteCaster.Tick: {ex}");
         }
+        try { RemoveReplicaSummons(); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] RemoveReplicaSummons: {ex.Message}"); }
+        try { GlideAim(unscaledDeltaTime); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] GlideAim: {ex.Message}"); }
+        try { UpdateAlwaysOn(); }
+        catch (Exception ex) { if (_alwaysOnErrors++ < 5) Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] UpdateAlwaysOn: {ex}"); }
         RunProbes();
     }
 
@@ -395,6 +458,7 @@ public static class RemoteCaster
         var e = c.Entity;
         var copies = c.Copies.Values.ToArray();
         ForgetCaster(c);
+        c.AlwaysOnWanted.Clear(); // out of the run: its next SkillAlwaysOn brings them back
         Probes.RemoveAll(p => p.Caster == c);
         if (e == null) return;
         try
@@ -448,6 +512,7 @@ public static class RemoteCaster
         }
         if (caster.FailedKeys.Contains(key) || caster.Entity == null) return null;
 
+        if ((skillType & SkillType.Summon) != 0) { RefuseSummon(caster, key, "Summon tag"); return null; }
         try
         {
             var inst = template != null ? CreateFromTemplate(caster, key, template, out string how) : CreateSkillInstance(caster, key, skillType, out how);
@@ -455,8 +520,24 @@ public static class RemoteCaster
 
             c = new Copy { Key = key, Skill = inst, Ptr = inst.Pointer, Kind = inst.GetIl2CppType().Name };
             caster.Copies[key] = c;
+            // 1.6.0: TemporaryRotatingSkill.DoActivate (0x56A5B0) CrossFades its AnimationTrait (+0x268) on the skill's
+            // CasterAnimator (+0x130) and throws if the trait is there and the animator isn't: our stand-in has no
+            // AnimatorComponent (the Machinist's ResonatingCrystals NRE). Without the trait it skips the CrossFade and
+            // spawns the crystals; the ghost's cast animation is played separately (PlayGhostAnimation).
+            var trs = inst.TryCast<TemporaryRotatingSkill>();
+            if (trs != null) FieldDump.Log(trs, $"copy '{key}' (slot {caster.Slot})", FieldDump.RotatingOffsets);
+            if (trs != null && inst.CasterAnimator == null && trs.AnimationTrait != null)
+            {
+                trs.AnimationTrait = null!;
+                Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Copy '{key}' (TemporaryRotatingSkill): no caster animator on the stand-in, animation trait dropped.");
+            }
             Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Copy '{key}' ({c.Kind}, type={skillType}, via {how}) set up on remote caster {caster.Slot}.");
             return c;
+        }
+        catch (ReplicaRefused r)
+        {
+            RefuseSummon(caster, key, r.Message);
+            return null;
         }
         catch (Exception ex)
         {
@@ -464,6 +545,16 @@ public static class RemoteCaster
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] Could not copy skill '{key}' on caster {caster.Slot} (won't retry this match): {ex}");
             return null;
         }
+    }
+
+    private sealed class ReplicaRefused : Exception { public ReplicaRefused(string why) : base(why) { } }
+
+    /// <summary>A partner's skill that brings units into the world is never copied (the sender skips them too; this
+    /// covers a sender that didn't).</summary>
+    private static void RefuseSummon(Caster caster, string key, string why)
+    {
+        caster.FailedKeys.Add(key);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] '{key}' is not replayed on caster {caster.Slot} ({why}): its units come through SummonSync.");
     }
 
     /// <summary>The skill the other player cast, straight from its prefab: "Skill-Prefabs/&lt;key&gt;" is the same asset on all
@@ -476,6 +567,7 @@ public static class RemoteCaster
     {
         var prefab = ResourcesUtil.Load<Skill>(SkillPrefabFolder + key);
         if (prefab == null) throw new Exception($"no skill prefab at Resources '{SkillPrefabFolder}{key}'");
+        if (CastSync.Summons(prefab)) throw new ReplicaRefused("it summons units");
         var inst = UnityEngine.Object.Instantiate(prefab, caster.Entity!.transform);
         if (inst == null) throw new Exception("Instantiate returned null");
         SetupOnCaster(caster.Entity, inst, skillType);
@@ -554,8 +646,10 @@ public static class RemoteCaster
         // Phase 9: a player far from us is off screen: its replica (visual only) would just cost effects. [Coop] ReplicaCastRadius.
         float radius = Plugin.ReplicaCastRadius?.Value ?? 0f;
         var me = GameState.LocalPlayerEntity;
-        if (radius > 0f && me != null && RemoteProxy.TryGetPosition(slot, out var at, out _)
+        // Not for a God cast (template): those fall around whichever player they aim at, maybe us.
+        if (radius > 0f && template == null && me != null && RemoteProxy.TryGetPosition(slot, out var at, out _)
             && (at - me.transform.position).sqrMagnitude > radius * radius) return PlayResult.Culled;
+        if (caster.FailedKeys.Contains(m.Key)) return PlayResult.NoSkill; // 1.4.1: also given up after repeated rejects
         var c = GetOrCreateCopy(caster, m.Key, (SkillType)m.SkillType, template);
         if (c == null) return PlayResult.NoSkill;
 
@@ -589,6 +683,7 @@ public static class RemoteCaster
 
             c.Front = m.Has(CastMessage.FFront) ? m.Front : tr.position + tr.forward * 5f;
             c.Ground = m.Has(CastMessage.FGround) ? m.Ground : c.Front;
+            c.HasFrontTarget = c.HasGroundTarget = false; // a new cast starts from its own aim
             bool wantChannel = m.Has(CastMessage.FChannel), wantFront = m.Has(CastMessage.FFrontFunc), wantGround = m.Has(CastMessage.FGroundFunc);
             if ((wantChannel || wantFront || wantGround) && !TryGetFuncs(caster, c, wantChannel, wantFront, wantGround)) return PlayResult.Error;
             if (wantChannel)
@@ -602,7 +697,21 @@ public static class RemoteCaster
             // IgnoreAll: no cooldown, busy or combat checks, and no procs / chain casts / extra multicasts -
             // those arrive as their own cast messages from the other side.
             bool ok = caster.Entity._skillCaster.CastSkill(c.Skill, p, SkillActivationOptions.IgnoreAll);
-            if (!ok) return PlayResult.Rejected;
+            if (!ok)
+            {
+                // 1.4.1: a skill whose activation throws inside the game on our stand-in (the Machinist's
+                // ResonatingCrystals, a TemporaryRotatingSkill: NRE in DoActivate) comes back false every time and the
+                // interop logs the exception each cast. Three in a row: stop replaying it this match, once in the log.
+                if (++c.Rejects >= 3)
+                {
+                    caster.FailedKeys.Add(m.Key);
+                    Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] '{m.Key}' ({c.Kind}) rejected 3 times in a row on caster {slot}: not replayed for the rest of the match.");
+                }
+                return PlayResult.Rejected;
+            }
+            c.Rejects = 0;
+            var rot = c.Skill.TryCast<TemporaryRotatingSkill>();
+            if (rot != null) c.TickUntil = Time.unscaledTime + Mathf.Clamp(rot.ProjectileSkillDuration + 1f, 2f, 60f);
             QueueVisualProbe(caster, c, m);
             if (template == null) PlayGhostAnimation(caster, c.Skill); // a God cast is not the ghost's own
             return PlayResult.Played;
@@ -612,6 +721,114 @@ public static class RemoteCaster
             Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] Playing '{m.Key}' for slot {slot}: {ex}");
             return PlayResult.Error;
         }
+    }
+
+    /// <summary>SkillChannelAim: where that player's open channel points now. Only for a channel we are playing.</summary>
+    internal static void OnChannelAim(byte slot, string key, byte flags, Vector3 front, Vector3 ground)
+    {
+        if (!Casters.TryGetValue(slot, out var c) || !c.Copies.TryGetValue(key, out var copy)) return;
+        if (!c.Channeling.TryGetValue(key, out bool on) || !on) return;
+        if ((flags & 1) != 0) { copy.FrontTarget = front; copy.HasFrontTarget = true; }
+        if ((flags & 2) != 0) { copy.GroundTarget = ground; copy.HasGroundTarget = true; }
+    }
+
+    /// <summary>SkillAlwaysOn: that player's whole list of always-on skills (empty = none).</summary>
+    internal static void SetAlwaysOn(byte slot, List<(string Key, AlwaysOnSpec Spec)> list)
+    {
+        var caster = CasterFor(slot);
+        bool same = caster.AlwaysOnWanted.Count == list.Count;
+        if (same) foreach (var (key, spec) in list) if (!caster.AlwaysOnWanted.TryGetValue(key, out var have) || have != spec) { same = false; break; }
+        if (same) return;
+        caster.AlwaysOnWanted.Clear();
+        foreach (var (key, spec) in list) caster.AlwaysOnWanted[key] = spec;
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Slot {slot} always-on skills: {(list.Count > 0 ? string.Join(", ", list.Select(e => $"{e.Key}(+{e.Spec.Extra})")) : "none")}.");
+    }
+
+    /// <summary>Every frame: run each wanted always-on skill's OnUpdate on that player's caster, stop the others.
+    /// While the player is down (or there's no caster) they all stop, and come back with it.</summary>
+    private static void UpdateAlwaysOn()
+    {
+        List<string>? stop = null;
+        foreach (var caster in Casters.Values)
+        {
+            bool active = caster.Entity != null && _matchStarted && !Life.CoopLife.IsRemoteDown(caster.Slot);
+            stop?.Clear();
+            foreach (var kv in caster.Copies)
+                if (kv.Value.AlwaysOn && (!active || !caster.AlwaysOnWanted.ContainsKey(kv.Key))) (stop ??= new List<string>()).Add(kv.Key);
+            if (stop != null) foreach (var key in stop) StopAlwaysOn(caster, key, active ? "no longer used" : "player down or no caster");
+            // 1.6.0: a replayed TemporaryRotatingSkill (the Machinist's crystals) spins and ends its projectiles in its
+            // own OnUpdate, which only the owner's caster UpdateAll calls: run it here for the skill's duration.
+            if (caster.Entity != null)
+            {
+                float now = Time.unscaledTime;
+                foreach (var cp in caster.Copies.Values)
+                {
+                    if (cp.TickUntil <= 0f) continue;
+                    if (now > cp.TickUntil || cp.Skill == null) { cp.TickUntil = 0f; continue; }
+                    try { var t = cp.Skill.TryCast<TemporaryRotatingSkill>(); if (t != null) t.OnUpdate(); else cp.TickUntil = 0f; }
+                    catch (Exception ex)
+                    {
+                        cp.TickUntil = 0f;
+                        if (_alwaysOnErrors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Temporary '{cp.Key}' OnUpdate for slot {caster.Slot}: {ex.Message}");
+                    }
+                }
+            }
+            if (!active || caster.AlwaysOnWanted.Count == 0) continue;
+
+            foreach (var kv in caster.AlwaysOnWanted)
+            {
+                if (caster.FailedKeys.Contains(kv.Key)) continue;
+                var c = GetOrCreateCopy(caster, kv.Key, (SkillType)kv.Value.Type);
+                var rs = c != null ? c.Skill.TryCast<RotatingShieldSkill>() : null;
+                if (c == null || rs == null) continue;
+                try
+                {
+                    if (!c.AlwaysOn || c.AppliedSpec != kv.Value)
+                    {
+                        var spec = kv.Value;
+                        if (spec.Level > 0) c.Skill.SkillLevel = spec.Level;
+                        rs.ExtraProjectiles = spec.Extra;
+                        rs.RotationSpeed = spec.Speed;
+                        if (spec.Cooldown > 0f) rs.ProjectileCooldown = spec.Cooldown;
+                        ApplyFidelity(caster, c, new CastMessage { Level = spec.Level, Scale = spec.Scale });
+                        if (!c.AlwaysOn)
+                            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Slot {caster.Slot}: always-on '{kv.Key}' running on its caster ({rs.BaseProjectiles}+{spec.Extra} projectiles, speed {spec.Speed:F0}).");
+                        c.AlwaysOn = true;
+                        c.AppliedSpec = spec;
+                    }
+                    rs.OnUpdate();
+                }
+                catch (Exception ex)
+                {
+                    caster.FailedKeys.Add(kv.Key); // stops trying this one for the match
+                    if (_alwaysOnErrors++ < 5) Plugin.StaticLog.LogError($"[SoulstoneCoop][casts] Always-on '{kv.Key}' for slot {caster.Slot}: {ex}");
+                    StopAlwaysOn(caster, kv.Key, "error");
+                    break; // FailedKeys / Copies changed: next frame
+                }
+            }
+        }
+    }
+
+    /// <summary>Recycle ends its projectiles (RotatingShieldSkill.Recycle 0x55E010), then the copy goes (DestroyCopy).</summary>
+    private static void StopAlwaysOn(Caster caster, string key, string why)
+    {
+        if (!caster.Copies.TryGetValue(key, out var c)) return;
+        caster.Copies.Remove(key);
+        DestroyCopy(c);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] Slot {caster.Slot}: always-on '{key}' stopped ({why}).");
+    }
+
+    /// <summary>Open channels' aim glides to the latest SkillChannelAim (packets come ~10 Hz; the skill reads it every frame).</summary>
+    private static void GlideAim(float dt)
+    {
+        float k = 1f - Mathf.Exp(-15f * dt);
+        foreach (var caster in Casters.Values)
+            foreach (var kv in caster.Channeling)
+            {
+                if (!kv.Value || !caster.Copies.TryGetValue(kv.Key, out var copy)) continue;
+                if (copy.HasFrontTarget) copy.Front = Vector3.Lerp(copy.Front, copy.FrontTarget, k);
+                if (copy.HasGroundTarget) copy.Ground = Vector3.Lerp(copy.Ground, copy.GroundTarget, k);
+            }
     }
 
     internal static void OnChannelEnd(byte slot, string key)
@@ -689,9 +906,10 @@ public static class RemoteCaster
             var who = CoopSession.Get(caster.Slot);
             var ghost = who?.Ghost;
             if (ghost == null) return;
-            if (caster.GhostAnimators == null || ghost.Pointer != caster.AnimGhostPtr)
+            if (caster.GhostAnimators == null || ghost.Pointer != caster.AnimGhostPtr || caster.AnimModelVersion != who!.ModelVersion)
             {
                 caster.AnimGhostPtr = ghost.Pointer;
+                caster.AnimModelVersion = who!.ModelVersion;
                 caster.GhostAnimators = ghost.GetComponentsInChildren<Animator>(true);
             }
             int hash = Animator.StringToHash(trait.AnimationName);

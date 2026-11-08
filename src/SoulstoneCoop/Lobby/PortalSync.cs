@@ -351,6 +351,7 @@ public static class PortalSync
     /// (MinTimeForEndlessRush / MinTimeForBossRush) or the profile hasn't unlocked them.</summary>
     private static void HandleHotkey()
     {
+        if (!Plugin.TestKeysOn) return; // 1.6.2
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f5 = kb.f5Key.isPressed;
@@ -387,6 +388,7 @@ public static class PortalSync
             Enemies.ClientPuppets.DropStaleFromHostScene(newMatchUp);
             Loot.LootSync.DropPendingFromOldScene();
             Enemies.ObjectiveSync.ResetForNewScene();
+            Loot.ChestSync.OnHostLeftScene();
             Plugin.StaticLog.LogInfo($"[SoulstoneCoop][portal] Client: host left its scene - stale puppets/loot dropped (our next match up: {newMatchUp}).");
         }
         catch (Exception ex)
@@ -405,6 +407,7 @@ public static class PortalSync
         Enemies.EnemyCasts.ClearMatchCaches();
         Enemies.ObjectiveSync.ResetForNewScene();
         Summons.SummonSync.OnLocalSceneGone();
+        Loot.ChestSync.OnLocalSceneGone();
     }
 }
 

@@ -16,6 +16,9 @@ namespace SoulstoneCoop.Enemies;
 /// never takes damage: hits on it are forwarded to that client as DamageToClient. See docs/fase3-notas.md.
 /// Phase 9: one proxy per client in the run (slot 1-7). Spawns rotate around the living players, the recycler spares
 /// what is near any living client, and seekers chase the nearest living player.
+/// Host down with a client still up (docs/host-caido-notas.md): spawns all go around the living clients, seekers go to
+/// them, and the enemies left around the host's body with no living player within the recycler's radius are recycled,
+/// as the game's own recycler would do around the living players (HostDownSweep).
 /// </summary>
 public static class RemoteProxy
 {
@@ -43,6 +46,7 @@ public static class RemoteProxy
         public Entity? Entity;
         public IntPtr Ptr;
         public ModifiedCharacter? Character;
+        public bool DashApplied; // 1.6.1: our _isDashing is on this stand-in's character
         public RemotePlayerState? State;
         public bool AppliedDead;
         public float RetryTimer;
@@ -65,6 +69,7 @@ public static class RemoteProxy
     // Telemetry window
     private static float _telemetryTimer;
     private static int _hostHits, _spawnRedirects, _spawnCalls, _recyclerProtected, _seekerRetargets;
+    private static int _sweepRecycled, _spawnSkippedFar;
     private static double _hostDamage;
     private static float _maxHit;
     private static string _maxHitBy = "-";
@@ -296,6 +301,7 @@ public static class RemoteProxy
                 else if (haveRemote)
                 {
                     MoveProxy(p, pos, rot);
+                    ApplyDash(p);
                 }
                 else if (r.Ghost == null)
                 {
@@ -304,6 +310,7 @@ public static class RemoteProxy
                 }
             }
             AfterLoot(); // safety net if ProcessLoot threw past its postfix
+            HostDownSweep(unscaledDeltaTime);
         }
         catch (Exception ex)
         {
@@ -327,9 +334,11 @@ public static class RemoteProxy
                 Plugin.StaticLog.LogInfo(
                     $"[SoulstoneCoop][proxy] Host: [{string.Join(" | ", parts)}] " +
                     $"hostHits={_hostHits} hostDmg={_hostDamage:F0} spawnRedirects={_spawnRedirects}/{_spawnCalls} " +
-                    $"recyclerProtected={_recyclerProtected} seekerRetargets={_seekerRetargets} maxHit={_maxHit:F0} by {_maxHitBy}");
+                    $"recyclerProtected={_recyclerProtected} seekerRetargets={_seekerRetargets} dashWindows={TakeDashWindows()} hostDown={Life.CoopLife.LocalDowned} " +
+                    $"sweepRecycled={_sweepRecycled} spawnNotHostRef={_spawnSkippedFar} maxHit={_maxHit:F0} by {_maxHitBy}");
             }
             _hostHits = _spawnRedirects = _spawnCalls = _recyclerProtected = _seekerRetargets = 0;
+            _sweepRecycled = _spawnSkippedFar = 0;
             _hostDamage = 0;
             _maxHit = 0f; _maxHitBy = "-";
         }
@@ -419,6 +428,55 @@ public static class RemoteProxy
         }
     }
 
+    // ---------------- 1.6.1: dash dodge (docs/pendencias-notas.md) ----------------
+    // The game's dodge: Skill.GetSkillEffectModifierForTarget (0x5650B0) copies the target's ModifiedCharacter
+    // _isDashing (+0x12C) into the result's IsDashDodged when the target Entity has a character (+0x260/+0x268), so a
+    // dashing player isn't hit by skills (damage over time from statuses doesn't go through it). Enemy skills hit the
+    // guest's stand-in here on the host, which never dashed: guests couldn't dodge. Now, while that guest's DashState
+    // says it's dashing (applied on arrival, capped at MaxDashSeconds in case the stop is lost), the stand-in's
+    // character reports dashing, with its remaining duration kept up so the game's own dash update doesn't stop it.
+
+    private const float MaxDashSeconds = 0.6f;
+    private static readonly Dictionary<byte, (bool On, float Since)> ClientDash = new();
+    private static int _dashWindows, _dashErrors;
+
+    /// <summary>Host: a client's DashState (PlayerSync), on arrival.</summary>
+    internal static void OnClientDash(byte slot, bool on)
+    {
+        ClientDash[slot] = (on, Time.unscaledTime);
+        if (on) _dashWindows++;
+    }
+
+    private static void ApplyDash(Proxy p)
+    {
+        var ch = p.Character;
+        if (ch == null) return;
+        bool want = ClientDash.TryGetValue(p.Slot, out var d) && d.On && Time.unscaledTime - d.Since < MaxDashSeconds
+                    && !(p.State.HasValue && p.State.Value.Dead);
+        try
+        {
+            if (want)
+            {
+                if (!ch._isDashing) ch._isDashing = true;
+                if (ch._dashRemainingDuration < 0.1f) ch._dashRemainingDuration = 0.1f;
+                p.DashApplied = true;
+            }
+            else if (p.DashApplied)
+            {
+                ch._isDashing = false;
+                ch._dashRemainingDuration = 0f;
+                p.DashApplied = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_dashErrors++ < 3) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][proxy] Dash on stand-in {p.Slot}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Telemetry: dash windows received since the last call.</summary>
+    internal static int TakeDashWindows() { int n = _dashWindows; _dashWindows = 0; return n; }
+
     private static void MoveProxy(Proxy p, Vector3 pos, Quaternion rot)
     {
         var tr = p.Entity!.transform;
@@ -490,6 +548,17 @@ public static class RemoteProxy
         if (host == null || Life.CoopLife.LocalDowned) return null;
         var h = host._health;
         return h != null && h.HasBeenKilled ? null : host;
+    }
+
+    /// <summary>Every living player entity: the host's player while it's up, then each living client's proxy
+    /// (HostHazards: who the God's meteors go for).</summary>
+    internal static void CollectLivingPlayers(List<Entity> into)
+    {
+        into.Clear();
+        var host = LivingHost();
+        if (host != null) into.Add(host);
+        foreach (var p in Proxies.Values)
+            if (p.Targetable && p.Entity != null) into.Add(p.Entity);
     }
 
     /// <summary>The nearest living player entity (host or a living client's proxy), skipping <paramref name="except"/>.
@@ -572,8 +641,16 @@ public static class RemoteProxy
         if (InSpawnRedirect || ByPtr.Count == 0) return;
         var local = GameState.LocalPlayerEntity;
         if (local == null) return;
-        // Only reference points that are the host player (other callers pass their own areas).
-        if ((referencePoint - local.transform.position).sqrMagnitude > 4f) return;
+        // Only reference points that are the host player (other callers pass their own areas). Flat distance: the
+        // callers pass the player's root or one of its placeholders (UnitUtil.GetTargetTransform), at another height,
+        // and the downed host's ragdoll shouldn't make its spawns slip through.
+        var d = referencePoint - local.transform.position;
+        d.y = 0f;
+        if (d.sqrMagnitude > HostReferenceRadius * HostReferenceRadius)
+        {
+            if (Life.CoopLife.LocalDowned) _spawnSkippedFar++;
+            return;
+        }
 
         SpawnCandidates.Clear();
         bool hostUp = LivingHost() != null;
@@ -591,14 +668,96 @@ public static class RemoteProxy
         _spawnRedirects++;
     }
 
+    private const float HostReferenceRadius = 2.5f;
+    private const float SweepInterval = 1f;
+    private const float SweepGrace = 3f;      // the host just went down: a reviver may be on its way
+    private const int SweepMaxPerPass = 25;   // spread a big cleanup over a few seconds
+    private static float _sweepTimer, _downSince = -1f;
+    private static readonly List<Entity> SweepScratch = new();
+
+    /// <summary>Host down, a client up. The game's recycler (EntityRegistry.DefaultContinuousRecycler) measures from the
+    /// host's player, now a body on the ground: what is around it is never recycled, even with nobody alive nearby. Those
+    /// enemies would sit there (their target search has a range) and fill the alive-unit limit that the spawner checks
+    /// (GetCurrentActiveEntitiesCount), so fewer enemies come to the players still fighting. Every second, recycle the
+    /// recyclable enemies that are within the recycler's radius of the body and outside it for every living client,
+    /// the same rule the recycler applies around a living player. Bosses and the dead are left alone.</summary>
+    private static void HostDownSweep(float dt)
+    {
+        if (!Life.CoopLife.LocalDowned || ByPtr.Count == 0 || !_matchStarted) { _downSince = -1f; _sweepTimer = 0f; return; }
+        float now = Time.unscaledTime;
+        if (_downSince < 0f) _downSince = now;
+        if (now - _downSince < SweepGrace) return;
+        _sweepTimer += dt;
+        if (_sweepTimer < SweepInterval) return;
+        _sweepTimer = 0f;
+        if (Time.timeScale <= 0f) return;
+
+        var local = GameState.LocalPlayerEntity;
+        var all = EntityRegistry.AllEntities;
+        if (local == null || all == null) return;
+        LivingClients.Clear();
+        foreach (var p in Proxies.Values)
+            if (p.Targetable && TryGetPosition(p.Slot, out var pos, out _)) LivingClients.Add(pos);
+        if (LivingClients.Count == 0) return; // everyone down: the defeat is on its way
+
+        var body = local.transform.position;
+        SweepScratch.Clear();
+        for (int i = 0; i < all.Count && SweepScratch.Count < SweepMaxPerPass; i++)
+        {
+            var e = all[i];
+            if (e == null || !e.CanBeRecycledByDistance || ByPtr.ContainsKey(e.Pointer)) continue;
+            if (!HostEnemySync.TryGetTracked(e.Pointer, out var t) || t.DiedSent || t.IsBoss) continue;
+            var h = e._health;
+            if (h != null && h.HasBeenKilled) continue;
+            var ep = e.transform.position;
+            if ((ep - body).sqrMagnitude >= RecycleRadiusSqr) continue; // the game's recycler handles those
+            bool near = false;
+            foreach (var c in LivingClients)
+                if ((ep - c).sqrMagnitude < RecycleRadiusSqr) { near = true; break; }
+            if (!near) SweepScratch.Add(e);
+        }
+        foreach (var e in SweepScratch)
+        {
+            try { e.Recycle(); _sweepRecycled++; }
+            catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][proxy] Host down: recycling '{e.gameObject.name}': {ex.Message}"); }
+        }
+        if (SweepScratch.Count > 0)
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][proxy] Host down: {SweepScratch.Count} enemies left around the host's body with no living player near recycled.");
+    }
+
     private static readonly List<Entity> RecyclerProtected = new();
     private static readonly List<Vector3> LivingClients = new();
 
     /// <summary>Patch #8, before the recycler: enemies within 35 u of any living client are temporarily not recyclable.</summary>
+    private const float NearScanInterval = 0.2f;
+    private static readonly List<Entity> NearClients = new();
+    private static float _nearScanAt;
+
+    /// <summary>Perf: which enemies are near a living client is worked out 5 times a second (all entities x all clients),
+    /// not on every recycler call (every frame); each call only flips the flag of that short list.</summary>
     internal static void BeforeRecycler()
     {
         AfterRecycler(); // in case the last call threw before its postfix
-        if (ByPtr.Count == 0) return;
+        if (ByPtr.Count == 0) { NearClients.Clear(); return; }
+        float now = Time.unscaledTime;
+        if (now >= _nearScanAt)
+        {
+            _nearScanAt = now + NearScanInterval;
+            ScanNearClients();
+        }
+        if (NearClients.Count == 0) return;
+        foreach (var e in NearClients)
+        {
+            if (e == null || !e.CanBeRecycledByDistance) continue;
+            e.CanBeRecycledByDistance = false;
+            RecyclerProtected.Add(e);
+        }
+        _recyclerProtected += RecyclerProtected.Count > 0 ? 1 : 0;
+    }
+
+    private static void ScanNearClients()
+    {
+        NearClients.Clear();
         LivingClients.Clear();
         foreach (var p in Proxies.Values)
             if (p.Targetable && TryGetPosition(p.Slot, out var pos, out _)) LivingClients.Add(pos);
@@ -610,14 +769,9 @@ public static class RemoteProxy
             var e = all[i];
             if (e == null || !e.CanBeRecycledByDistance) continue;
             var ep = e.transform.position;
-            bool near = false;
             foreach (var c in LivingClients)
-                if ((ep - c).sqrMagnitude < RecycleRadiusSqr) { near = true; break; }
-            if (!near) continue;
-            e.CanBeRecycledByDistance = false;
-            RecyclerProtected.Add(e);
+                if ((ep - c).sqrMagnitude < RecycleRadiusSqr) { NearClients.Add(e); break; }
         }
-        _recyclerProtected += RecyclerProtected.Count > 0 ? 1 : 0;
     }
 
     internal static void AfterRecycler()

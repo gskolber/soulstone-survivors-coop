@@ -36,6 +36,88 @@ public static class VisualGhostFactory
 
     private static GameObject? _buildHolder;
 
+    /// <summary>The skin id of the last model TryBuildRemoteModel built (RemotePlayer.GhostSkinId).</summary>
+    private static string LastSkinId = "";
+
+    /// <summary>The partner's mod skin, when this game has the same one installed (Create starts ModSkinLoader).</summary>
+    private static CharacterSkinData? PendingModSkin;
+
+    /// <summary>The weapon the partner's Hello names, when it's of its character; else that character's default.</summary>
+    private static WeaponDefinition? ResolveWeapon(PlayerInfo r, CharactersType ct)
+    {
+        WeaponDefinition? weapon = null;
+        var weapons = Global.WeaponCollection;
+        if (weapons == null) return null;
+        if (!string.IsNullOrEmpty(r.WeaponId)
+            && weapons.TryGetWeaponDefinitionById(r.WeaponId, out var wd, out var weaponCharacter)
+            && wd != null && weaponCharacter == ct)
+            weapon = wd;
+        return weapon ?? weapons.GetDefaultWeaponDefinitionByCharacterId(ct);
+    }
+
+    /// <summary>The weapons of that player's Hello on a model of it (ModSkinLoader).</summary>
+    internal static string SpawnWeaponsFor(PlayerPrefabReferences refs, RemotePlayer who, string skinId)
+    {
+        if (refs.ItemFollowBone == null) return "no bone follower, no weapons";
+        var weapon = ResolveWeapon(who.Info, (CharactersType)who.Info.CharacterId);
+        return weapon == null ? "no weapon definition" : SpawnWeapons(refs, weapon, skinId);
+    }
+
+    /// <summary>AscensionSync: another model of that player (an ascension / transformation PlayerPrefabReferences),
+    /// built like the main one (inactive holder, weapons of its Hello when the model has a bone follower, stripped)
+    /// and parked INACTIVE under <paramref name="parent"/> at the given local scale.</summary>
+    internal static GameObject? BuildExtraModel(PlayerPrefabReferences prefab, RemotePlayer who, Transform parent, float scale,
+        out Animator? animator, out string what)
+    {
+        animator = null;
+        var holder = new GameObject("SoulstoneCoop_GhostExtraModelBuild");
+        holder.SetActive(false);
+        try
+        {
+            var refs = UnityEngine.Object.Instantiate(prefab, holder.transform);
+            if (refs == null) { what = "Instantiate returned null"; return null; }
+            var go = refs.gameObject;
+            var ct = (CharactersType)who.Info.CharacterId;
+            refs.SpawnedCharacterId = ct;
+            refs.SpawnedCharacterSkinId = who.GhostSkinId;
+            if (refs.ItemFollowBone == null) refs.ItemFollowBone = go.GetComponentInChildren<ItemFollowBoneUtil>(true);
+            string weaponNote = "no bone follower, no weapons";
+            if (refs.ItemFollowBone != null)
+            {
+                var weapon = ResolveWeapon(who.Info, ct);
+                weaponNote = weapon == null ? "no weapon definition" : SpawnWeapons(refs, weapon, who.GhostSkinId);
+            }
+            try
+            {
+                var list = refs.AnimatorComponent != null ? refs.AnimatorComponent.Animators : null;
+                if (list != null && list.Count > 0) animator = list[0];
+            }
+            catch { /* fall back below */ }
+            animator ??= go.GetComponentInChildren<Animator>(true);
+            StripToVisualOnly(go, go.transform);
+            foreach (var a in go.GetComponentsInChildren<Animator>(true))
+            {
+                try { if (a != null) { a.applyRootMotion = false; a.cullingMode = AnimatorCullingMode.AlwaysAnimate; } } catch { }
+            }
+            go.SetActive(false);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one * scale;
+            what = $"'{prefab.gameObject.name}' ({weaponNote}, animator={(animator != null ? animator.gameObject.name : "none")})";
+            return go;
+        }
+        catch (Exception ex)
+        {
+            what = $"build threw: {ex.Message}";
+            return null;
+        }
+        finally
+        {
+            UnityEngine.Object.Destroy(holder);
+        }
+    }
+
     /// <param name="who">The player the ghost stands for (phase 9: one ghost per other player). Null = the PageDown
     /// debug ghost: the local clone, no overhead.</param>
     public static GameObject Create(Entity source, RemotePlayer? who, Vector3 position, Quaternion rotation, string name)
@@ -48,6 +130,8 @@ public static class VisualGhostFactory
         string builtForKey = KeyFor(remote);
         BuiltFromRemote = false;
         ModelAnimator = null;
+        LastSkinId = "";
+        PendingModSkin = null;
 
         string what;
         try
@@ -95,6 +179,10 @@ public static class VisualGhostFactory
         if (who != null)
         {
             who.GhostKey = builtForKey;
+            who.GhostSkinId = LastSkinId;
+            who.ModelVersion++;
+            if (PendingModSkin != null && BuiltFromRemote) ModSkinLoader.Begin(who, cloneGo, PendingModSkin);
+            PendingModSkin = null;
             who.GhostFromRemote = BuiltFromRemote;
             who.ModelAnimator = ModelAnimator;
             GhostOverhead.Attach(who.Slot, cloneGo, EstimateHeight(cloneGo));
@@ -122,7 +210,12 @@ public static class VisualGhostFactory
             if (skins.TryGetCharacterSkinById(r.SkinId, out var s, out var skinCharacter) && s != null)
             {
                 if (skinCharacter != ct) skinNote = $" (skin '{r.SkinId}' belongs to {skinCharacter}, using the default)";
-                else if (s.IsMod()) skinNote = $" (skin '{r.SkinId}' is a mod skin, not loadable here; using the default)";
+                else if (s.IsMod())
+                {
+                    // 1.3.1: installed here too (it's in our collection): the default now, the mod skin once it's loaded.
+                    PendingModSkin = s;
+                    skinNote = $" (skin '{r.SkinId}' is a mod skin installed here: loading it, the default meanwhile)";
+                }
                 else if (s.IsSprite2D) skinNote = $" (skin '{r.SkinId}' is 2D, needs CharacterSkin2DController; using the default)";
                 else skin = s;
             }
@@ -138,16 +231,7 @@ public static class VisualGhostFactory
         var prefab = skin.LoadCharacterSkin(false);
         if (prefab == null) { what = $"Resources 'Characters/{skin.CharacterSkinID}' not found"; return null; }
 
-        WeaponDefinition? weapon = null;
-        var weapons = Global.WeaponCollection;
-        if (weapons != null)
-        {
-            if (!string.IsNullOrEmpty(r.WeaponId)
-                && weapons.TryGetWeaponDefinitionById(r.WeaponId, out var wd, out var weaponCharacter)
-                && wd != null && weaponCharacter == ct)
-                weapon = wd;
-            weapon ??= weapons.GetDefaultWeaponDefinitionByCharacterId(ct);
-        }
+        WeaponDefinition? weapon = ResolveWeapon(r, ct);
 
         _buildHolder = new GameObject("SoulstoneCoop_GhostModelBuild");
         _buildHolder.SetActive(false); // nothing instantiated under it gets Awake/OnEnable until we've stripped it
@@ -160,6 +244,7 @@ public static class VisualGhostFactory
         // The fields SpawnCharacter fills before Setup. SpawnWeaponsAsyncRoutine reads WeaponDefinition (0xA8).
         refs.SpawnedCharacterId = ct;
         refs.SpawnedCharacterSkinId = skin.CharacterSkinID;
+        LastSkinId = skin.CharacterSkinID;
         // FirstTimeSetup (0x812600) fills this one, and SetHandOffsetToMatchDefaultRig (inside the weapon routine) loops over
         // its Followers without a null check: 0.8.0 left it empty, hence its NRE and the ghost without weapons.
         if (refs.ItemFollowBone == null) refs.ItemFollowBone = modelGo.GetComponentInChildren<ItemFollowBoneUtil>(true);
@@ -320,7 +405,9 @@ public static class VisualGhostFactory
     /// <summary><paramref name="keepBoneFollowersUnder"/>: the partner's model, whose ItemFollowBoneUtil stays alive. It is what
     /// makes the weapon attachments follow the hands (LateUpdateAll moves each Follower to its bone), and it only touches
     /// transforms of that same model. Elsewhere (the local-clone fallback) it goes, as before phase 5.</summary>
-    internal static void StripToVisualOnly(GameObject root, Transform? keepBoneFollowersUnder = null)
+    /// <param name="keepEffects">Also keep sprites, lights and VFX Graph effects (PassiveObjectSync: world objects whose look is
+    /// mostly effects). Still no script, collider or rigidbody.</param>
+    internal static void StripToVisualOnly(GameObject root, Transform? keepBoneFollowersUnder = null, bool keepEffects = false)
     {
         // Ragdoll joints must go first: Unity refuses to remove a Rigidbody a Joint still depends on.
         foreach (var joint in root.GetComponentsInChildren<Joint>(true))
@@ -329,7 +416,7 @@ public static class VisualGhostFactory
         var allComponents = root.GetComponentsInChildren<Component>(true);
         foreach (var c in allComponents)
         {
-            if (c == null || IsVisualComponent(c)) continue;
+            if (c == null || IsVisualComponent(c) || (keepEffects && IsEffectComponent(c))) continue;
             if (keepBoneFollowersUnder != null && c.TryCast<ItemFollowBoneUtil>() != null && c.transform.IsChildOf(keepBoneFollowersUnder)) continue;
 
             try
@@ -348,6 +435,12 @@ public static class VisualGhostFactory
     // real IL2CPP runtime type - that's why the old allowlist-by-GetType() check matched nothing
     // and silently tried to destroy everything, Transform included (Unity just refuses that one
     // loudly). TryCast<T>() asks IL2CPP for the real type instead of trusting the wrapper's static type.
+    private static bool IsEffectComponent(Component c)
+    {
+        if (c.TryCast<SpriteRenderer>() != null || c.TryCast<Light>() != null) return true;
+        try { return c.GetIl2CppType().Name == "VisualEffect"; } catch { return false; }
+    }
+
     private static bool IsVisualComponent(Component c)
     {
         return c.TryCast<Transform>() != null
@@ -359,5 +452,133 @@ public static class VisualGhostFactory
             || c.TryCast<ParticleSystemRenderer>() != null
             || c.TryCast<TrailRenderer>() != null
             || c.TryCast<LineRenderer>() != null;
+    }
+}
+
+/// <summary>
+/// 1.3.1: the partner's mod skin, when this game has the same mod installed (the skin is in our own collection). The
+/// ghost is built with the character's default skin, and this loads the mod one the way the game does
+/// (ModManager.InstantiateCharacterSkinRoutine, asynchronous: the model comes from disk) under an inactive holder; once
+/// it's there, it's stripped like the default and takes its place on the ghost. Given up after LoadTimeout or if the
+/// ghost changes meanwhile. A mod skin that isn't installed here keeps the default (nothing to load it from).
+/// </summary>
+internal static class ModSkinLoader
+{
+    private const float LoadTimeout = 30f;
+
+    private sealed class Load
+    {
+        public RemotePlayer Who = null!;
+        public IntPtr GhostPtr;
+        public CharacterSkinData Skin = null!;
+        public CoroutineOutParameter<PlayerPrefabReferences> Out = null!;
+        public GameObject Holder = null!;
+        public float Started;
+    }
+
+    private static readonly Dictionary<byte, Load> Loads = new();
+    private static readonly List<byte> Done = new();
+
+    internal static void Begin(RemotePlayer who, GameObject ghost, CharacterSkinData skin)
+    {
+        try
+        {
+            Cancel(who.Slot);
+            var modId = skin.ModId;
+            if (modId == null || !modId.HasValue) return;
+            var runner = JobRunner.Instance;
+            if (runner == null) return;
+            var holder = new GameObject($"SoulstoneCoop_ModSkinLoad{who.Slot}");
+            holder.SetActive(false); // nothing it instantiates wakes up before it's stripped
+            var output = new CoroutineOutParameter<PlayerPrefabReferences>();
+            var routine = ModManager.InstantiateCharacterSkinRoutine((CharactersType)who.Info.CharacterId, modId.Value, who.Info.WeaponId ?? "",
+                output, holder.transform, false);
+            if (routine == null) { UnityEngine.Object.Destroy(holder); return; }
+            runner.StartCoroutine(routine);
+            Loads[who.Slot] = new Load { Who = who, GhostPtr = ghost.Pointer, Skin = skin, Out = output, Holder = holder, Started = Time.unscaledTime };
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop] Slot {who.Slot}: loading mod skin '{skin.CharacterSkinID}'.");
+        }
+        catch (Exception ex)
+        {
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop] Slot {who.Slot}: mod skin '{skin.CharacterSkinID}' can't be loaded here: {ex.Message}");
+        }
+    }
+
+    private static void Cancel(byte slot)
+    {
+        if (!Loads.TryGetValue(slot, out var l)) return;
+        Loads.Remove(slot);
+        if (l.Holder != null) UnityEngine.Object.Destroy(l.Holder);
+    }
+
+    internal static void Tick()
+    {
+        if (Loads.Count == 0) return;
+        Done.Clear();
+        foreach (var kv in Loads)
+        {
+            var l = kv.Value;
+            var ghost = l.Who.Ghost;
+            if (ghost == null || ghost.Pointer != l.GhostPtr) { Done.Add(kv.Key); continue; }
+            PlayerPrefabReferences? refs = null;
+            try { refs = l.Out.Value; } catch { }
+            if (refs == null)
+            {
+                if (Time.unscaledTime - l.Started > LoadTimeout)
+                {
+                    Plugin.StaticLog.LogWarning($"[SoulstoneCoop] Slot {kv.Key}: mod skin '{l.Skin.CharacterSkinID}' didn't load in {LoadTimeout:F0} s: the default stays.");
+                    Done.Add(kv.Key);
+                }
+                continue;
+            }
+            try { Swap(l, ghost, refs); }
+            catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop] Slot {kv.Key}: mod skin swap failed, the default stays: {ex.Message}"); }
+            Done.Add(kv.Key);
+        }
+        foreach (var slot in Done) Cancel(slot);
+    }
+
+    private static void Swap(Load l, GameObject ghost, PlayerPrefabReferences refs)
+    {
+        var who = l.Who;
+        var model = refs.gameObject;
+        var ct = (CharactersType)who.Info.CharacterId;
+        float size = l.Skin.CharacterSkinSize > 0.01f ? l.Skin.CharacterSkinSize : 1f;
+        refs.SpawnedCharacterId = ct;
+        refs.SpawnedCharacterSkinId = l.Skin.CharacterSkinID;
+        if (refs.ItemFollowBone == null) refs.ItemFollowBone = model.GetComponentInChildren<ItemFollowBoneUtil>(true);
+        string weaponNote = VisualGhostFactory.SpawnWeaponsFor(refs, who, l.Skin.CharacterSkinID);
+        Animator? anim = null;
+        try
+        {
+            var list = refs.AnimatorComponent != null ? refs.AnimatorComponent.Animators : null;
+            if (list != null && list.Count > 0) anim = list[0];
+        }
+        catch { /* below */ }
+        anim ??= model.GetComponentInChildren<Animator>(true);
+        VisualGhostFactory.StripToVisualOnly(model, model.transform);
+        foreach (var a in model.GetComponentsInChildren<Animator>(true))
+        {
+            try { if (a != null) { a.applyRootMotion = false; a.cullingMode = AnimatorCullingMode.AlwaysAnimate; } } catch { }
+        }
+
+        // Out with the default model (the direct child of the ghost holding the current model animator).
+        var current = who.ModelAnimator;
+        if (current != null)
+        {
+            var t = current.transform;
+            while (t.parent != null && t.parent.Pointer != ghost.transform.Pointer) t = t.parent;
+            if (t.parent != null) UnityEngine.Object.Destroy(t.gameObject);
+        }
+        model.transform.SetParent(ghost.transform, false);
+        model.transform.localPosition = Vector3.zero;
+        model.transform.localRotation = Quaternion.identity;
+        model.transform.localScale = Vector3.one * size;
+        model.SetActive(true);
+        who.ModelAnimator = anim;
+        who.GhostSkinId = l.Skin.CharacterSkinID;
+        who.ModelVersion++;
+        AscensionSync.InvalidateGhost(who.Slot);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop] Slot {who.Slot}: mod skin '{l.Skin.CharacterSkinID}' on its ghost ({weaponNote}, animator={(anim != null ? anim.gameObject.name : "none")}).");
     }
 }

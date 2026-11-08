@@ -25,8 +25,13 @@ public static class CoopLife
 {
     public enum EndKind : byte { None = 0, Defeat = 1, Victory = 2, Surrender = 3, PortalHome = 4 }
 
-    private const float ReviveRadius = 2.5f;
+    /// <summary>How close a living ally has to stand (flat distance) to revive. 1.3: 2.5 -> 3.5, and drawn on the ground
+    /// around every downed player (DownedMarkers), so the spot is easy to find and to stay in while dodging.</summary>
+    internal const float ReviveRadius = 3.5f;
     private const float ReviveTime = 3f;
+    /// <summary>Revive bar lost per second with nobody next to the downed player, as a fraction of the time it takes to
+    /// fill: 0.1 = a full bar takes 30 s to empty, so stepping away to dodge doesn't throw the progress away.</summary>
+    private const float ReviveDecayRate = 0.1f;
     private const float DownedInvulnerability = 1e6f;
     private const float ReviveInvulnerability = 2f;
     private const float ReviveHealthFraction = 0.5f;
@@ -49,6 +54,7 @@ public static class CoopLife
     private static readonly float[] _progress = new float[Players.MaxSlots];
     private static readonly float[] _revivePendingTimer = new float[Players.MaxSlots]; // host: Revive sent, waiting for its ClientState
     private static float _allDownTimer;
+    private static readonly bool[] _downedNow = new bool[Players.MaxSlots];
     private static float _lifeTimer;
     private static int _lastSentDownMask = -1;
 
@@ -97,6 +103,8 @@ public static class CoopLife
         _enterPending = false;
         RunEnding = false;
         LeftAlone = false;
+        _gravityHeld = false; // a new scene's character starts with its own gravity
+        _sankLogged = false;
         Array.Clear(_downFromHost);
         Array.Clear(_progress);
         Array.Clear(_revivePendingTimer);
@@ -192,11 +200,13 @@ public static class CoopLife
                 _matchStarted = false;
             }
             if (_enterPending) { _enterPending = false; EnterDownedVisuals(); }
-            if (LocalDowned) UpdateSpectator();
+            if (LocalDowned) { UpdateSpectator(); HoldDownedBody(); }
             if (CoopRole.IsHostSide && Connected && InMatch) HostTick(dt);
             if (_pendingPortalTimer > 0f) RetryPendingPortal(dt);
             HostLostTick(dt);
             FeedbackTick(dt);
+            DownedMarkers.Tick(Connected && InMatch && !RunEnding);
+            DownedPose.Tick(Connected && InMatch && !RunEnding); // 1.6.0: lying on the ground on every screen
             HandleHotkeys();
         }
         catch (Exception ex)
@@ -226,25 +236,73 @@ public static class CoopLife
     {
         var local = GameState.LocalPlayerEntity;
         if (local == null) return;
+        // 1.4.1: no ragdoll any more. Its bones live outside the player object and fell through the ground of some
+        // maps (seen at y -5800), dragging the player's root with them every frame: every other player saw the body
+        // (and its markers) underground, and the revive got up down there. The body now stays where it went down:
+        // movement off, gravity off, no velocity; the ring, the pillar and "DOWN" mark it on every screen.
         bool ragdolled = false;
+        _downPos = local.transform.position;
         try
         {
-            var rag = local._ragdoll;
-            if (rag != null && !rag.ImmuneToRagdollEffect)
+            var ch = local._character;
+            if (ch != null)
             {
-                rag.SetToRagdoll(-1f, true);
-                ragdolled = rag.Ragdolled;
+                _origGravity = ch._gravity;
+                _gravityHeld = true;
+                ch._gravity = Vector3.zero;
+                ch.SetVelocity(Vector3.zero);
+                ch.SetMovementMode(MovementMode.None);
             }
         }
-        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] SetToRagdoll: {ex.Message}"); }
-        try { if (local._character != null) local._character.SetMovementMode(MovementMode.None); }
-        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] SetMovementMode(None): {ex.Message}"); }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Freezing the downed body: {ex.Message}"); }
         try { if (local._playerSkillAutoCast != null) local._playerSkillAutoCast.ForceStopAutoCasting = true; }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] ForceStopAutoCasting: {ex.Message}"); }
         if (CoopRole.IsHostSide) DropEnemiesTargeting(local);
         bool registered = EntityRegistry.TryGetEntity(local.Id, out var reg) && reg != null && reg.Pointer == local.Pointer;
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] Local player DOWNED (hp={local._health.CurrentHealth:F0}, ragdoll={ragdolled}, stillRegistered={registered}).");
         if (CoopRole.IsHostSide) SendLife(force: true);
+    }
+
+    private static Vector3 _downPos;
+    private static Vector3 _origGravity;
+    private static bool _gravityHeld, _sankLogged;
+
+    /// <summary>1.4.1: while down the body stays where it went down (EnterDownedVisuals turns gravity and movement off).
+    /// If anything still moves it more than 1 u down, the character's own Teleport puts it back (a plain transform write
+    /// is overwritten by the movement code on the next physics step).</summary>
+    private static void HoldDownedBody()
+    {
+        var local = GameState.LocalPlayerEntity;
+        var ch = local != null ? local._character : null;
+        if (ch == null) return;
+        if (local!.transform.position.y > _downPos.y - 1f) return;
+        try
+        {
+            if (!_sankLogged) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Downed body moved down to y={local.transform.position.y:F1}: put back at {_downPos}.");
+            _sankLogged = true;
+            ch.SetVelocity(Vector3.zero);
+            ch.Teleport(_downPos);
+        }
+        catch (Exception ex) { if (!_sankLogged) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Holding the downed body: {ex.Message}"); _sankLogged = true; }
+    }
+
+    /// <summary>1.4.1: on revive, gravity back, and back on the ground if the body is below where it went down.</summary>
+    private static void ReleaseDownedBody(Entity local)
+    {
+        _sankLogged = false;
+        var ch = local._character;
+        if (ch == null) return;
+        try
+        {
+            if (_gravityHeld) { ch._gravity = _origGravity; _gravityHeld = false; }
+            ch.SetVelocity(Vector3.zero);
+            if (local.transform.position.y < _downPos.y - 1f)
+            {
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Revived below the ground (y={local.transform.position.y:F1}): teleported to {_downPos}.");
+                ch.Teleport(_downPos);
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][life] Releasing the downed body: {ex.Message}"); }
     }
 
     /// <summary>Enemies already chasing us keep their target until RefreshTarget; we're unregistered, so drop it now.</summary>
@@ -290,10 +348,11 @@ public static class CoopLife
         }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][life] Revive (health/registry): {ex}"); }
 
+        ReleaseDownedBody(local);
         try
         {
             var rag = local._ragdoll;
-            if (rag != null && rag.Ragdolled) rag.SetToAnimator(); // get-up animation, then Walking + Ragdolled=false
+            if (rag != null && rag.Ragdolled) rag.SetToAnimator(); // (older downs) get-up animation, then Walking + Ragdolled=false
             else if (local._character != null) local._character.SetMovementMode(MovementMode.Walking);
         }
         catch (Exception ex)
@@ -399,6 +458,9 @@ public static class CoopLife
 
     private static void RestoreCamera()
     {
+        // 1.4.1: every way out of the downed state comes through here: gravity back (no-op unless it was held).
+        var me = GameState.LocalPlayerEntity;
+        if (_gravityHeld && me != null) ReleaseDownedBody(me);
         try
         {
             if (_cameraSwapped)
@@ -490,8 +552,10 @@ public static class CoopLife
         }
         _allDownTimer = 0f;
 
-        // Each downed player fills its bar while any living ally stands within the radius; away from all, it drains twice as fast.
-        var downedNow = new bool[Players.MaxSlots];
+        // Each downed player fills its bar while any living ally stands within the radius; away from all, it drains slowly
+        // (ReviveDecayRate), so a reviver can step out to dodge and come back.
+        var downedNow = _downedNow; // perf: one array for the whole session, not one per frame
+        Array.Clear(downedNow);
         foreach (var d in Run)
         {
             if (!d.Down) continue;
@@ -505,14 +569,45 @@ public static class CoopLife
                 x.y = y.y = 0f;
                 if ((x - y).sqrMagnitude <= ReviveRadius * ReviveRadius) { near = true; break; }
             }
-            _progress[d.Slot] = Mathf.Clamp01(_progress[d.Slot] + (near ? dt : -2f * dt) / ReviveTime);
+            _progress[d.Slot] = Mathf.Clamp01(_progress[d.Slot] + (near ? dt : -ReviveDecayRate * dt) / ReviveTime);
             if (_progress[d.Slot] < 1f) continue;
             _progress[d.Slot] = 0f;
             if (d.Slot == Players.HostSlot) ReviveLocal("an ally stood by");
             else SendRevive(d.Slot);
         }
         for (int s = 0; s < Players.MaxSlots; s++) if (!downedNow[s]) _progress[s] = 0f;
+        LogDowned(dt);
         SendLife(force: false);
+    }
+
+    private const float DownLogInterval = 2f;
+    private static float _downLogTimer;
+
+    /// <summary>Host, every 2 s while someone is down: where the downed player is, how far the nearest living ally is and
+    /// the revive bar, so a revive that never happens can be told apart from one nobody stood close enough for.</summary>
+    private static void LogDowned(float dt)
+    {
+        _downLogTimer += dt;
+        if (_downLogTimer < DownLogInterval) return;
+        _downLogTimer = 0f;
+        foreach (var d in Run)
+        {
+            if (!d.Down) continue;
+            float best = float.MaxValue;
+            int bestSlot = -1;
+            foreach (var a in Run)
+            {
+                if (a.Down || !a.HasPos || !d.HasPos) continue;
+                Vector3 x = a.Pos, y = d.Pos;
+                x.y = y.y = 0f;
+                float dist = (x - y).magnitude;
+                if (dist < best) { best = dist; bestSlot = a.Slot; }
+            }
+            Plugin.StaticLog.LogInfo(
+                $"[SoulstoneCoop][life] Host: slot {d.Slot} down revivable={d.Revivable} pos={(d.HasPos ? d.Pos.ToString() : "-")} " +
+                $"nearestAlly={(bestSlot >= 0 ? $"slot {bestSlot} at {best:F1} u" : "none")} (needs <= {ReviveRadius} u for {ReviveTime} s) " +
+                $"progress={_progress[d.Slot]:F2}");
+        }
     }
 
     private static bool LocalPlayerKilled()
@@ -815,6 +910,7 @@ public static class CoopLife
     private static bool _hostLost;
     private static float _hostLostTimer;
     private static bool _hostLostWaitingLogged;
+    private static float _reconnectNoticeTimer;
 
     private static void BeginHostLost()
     {
@@ -865,6 +961,20 @@ public static class CoopLife
             Lobby.CoopSession.Notice(Ui.Loc.Msg("nt.host_left_portal"), 10f);
             return;
         }
+        // 1.6.0: while NetworkManager tries to get back to the host, the run goes on and nothing ends; back in, the
+        // host's resync (LobbyState InRun) rebuilds the enemies and the partners here, no reload. Only when the
+        // reconnect window runs out does the usual end follow.
+        if (NetworkManager.Reconnecting)
+        {
+            _hostLostTimer = 0f;
+            _reconnectNoticeTimer -= dt;
+            if (_reconnectNoticeTimer <= 0f)
+            {
+                _reconnectNoticeTimer = 5f;
+                Lobby.CoopSession.Notice(Ui.Loc.Msg("nt.reconnecting", ("s", Mathf.CeilToInt(NetworkManager.ReconnectSecondsLeft))), 5.5f);
+            }
+            return;
+        }
         _hostLostTimer += dt;
         if (_hostLostTimer < HostLostDelay) return;
         if (PauseSync.LocalReason != PauseReason.None)
@@ -893,6 +1003,7 @@ public static class CoopLife
 
     private static void HandleHotkeys()
     {
+        if (!Plugin.TestKeysOn) return; // 1.6.2
         var kb = Keyboard.current;
         if (kb == null) return;
         bool f9 = kb.f9Key.isPressed, f10 = kb.f10Key.isPressed, f11 = kb.f11Key.isPressed;
@@ -907,6 +1018,9 @@ public static class CoopLife
         var local = GameState.LocalPlayerEntity;
         var h = local != null ? local._health : null;
         if (local == null || h == null || !InMatch) return;
+        // 1.4.1: a second F9 while down bypassed the downed invulnerability and killed for real on this machine only
+        // (its run ended while the host still had it down): ignored now.
+        if (LocalDowned) { Plugin.StaticLog.LogInfo("[SoulstoneCoop][life] F9 ignored: already down."); return; }
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][life] F9: lethal hit on the local player.");
         h.InvulnerabilityTime = 0f;
         UnitUtil.ChangeEntityHealth(null!, local, -(h.CurrentHealth + 1e9f), false, out _, out _, out _);

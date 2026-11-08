@@ -27,6 +27,8 @@ public static class RunSync
         public int MasteryLevel;
         public bool HasAffixes;              // Survivors: override the client's affixes with List
         public List<string> Affixes = new();
+        public int RunId;                    // 1.4: which run (new on Fight/Restart, kept across stages): RejoinProgress
+        public bool Rejoin;                  // 1.4: the host's AllowRejoin (guests keep their build for a comeback)
     }
 
     private static RunParams? _clientRun;      // client: the host's run we're loading into (affix override)
@@ -43,6 +45,21 @@ public static class RunSync
         var role = NetworkManager.Role;
         if (role == NetRole.Client)
         {
+            // 1.6.0: the host is in a run (we surrendered, or came back after it started): ask to be brought in.
+            var host = CoopSession.Get(Players.HostSlot);
+            if (CoopSession.Connected && host != null && host.Place == LobbyPlace.InRun)
+            {
+                if (UnityEngine.Time.unscaledTime - _lastJoinRequest > 3f)
+                {
+                    _lastJoinRequest = UnityEngine.Time.unscaledTime;
+                    var w = new NetDataWriter();
+                    w.Put((byte)PacketType.RunJoinRequest);
+                    NetworkManager.Send(w, DeliveryMethod.ReliableOrdered);
+                    Plugin.StaticLog.LogInfo("[SoulstoneCoop][run] Client: asked the host to join its run.");
+                }
+                CoopSession.Notice(Ui.Loc.Msg("nt.join_asked"));
+                return false;
+            }
             CoopSession.Notice(Ui.Loc.Msg(CoopSession.Connected ? "st.wait_host" : "nt.connecting_host"));
             return false;
         }
@@ -109,7 +126,13 @@ public static class RunSync
 
     /// <summary>Phase 9: that player is in our run already (it came with the RunStart): if it goes back to the menu
     /// (surrendered alone), AllowRejoin must not pull it straight back in.</summary>
-    internal static void NoteInRun(byte slot) { if (NetworkManager.Role == NetRole.Host && CoopSession.LocalInRun) _rejoinSent.Add(slot); }
+    internal static void NoteInRun(byte slot) { if (NetworkManager.Role == NetRole.Host && (CoopSession.LocalInRun || CoopSession.LocalLoading)) _rejoinSent.Add(slot); }
+
+    /// <summary>1.6.0, host: that player left our run back to the menu (surrendered) on the same connection: it is not
+    /// pulled back in by itself (it rejoins with Fight, RunJoinRequest). Before, a player that had entered the run while
+    /// we were still loading wasn't noted (NoteInRun needed LocalInRun), got the RunStart again the moment it reached
+    /// the menu, mid scene change, and stayed stuck on Loading.</summary>
+    internal static void NoteLeftRun(byte slot) { if (NetworkManager.Role == NetRole.Host) _rejoinSent.Add(slot); }
 
     /// <summary>Host took an Endless/BossRush portal (PortalSync): a partner joining later loads the current stage's
     /// map, with the same mode and the run's affixes.</summary>
@@ -123,9 +146,36 @@ public static class RunSync
             MasteryTier = _hostRun.MasteryTier,
             MasteryLevel = _hostRun.MasteryLevel,
             HasAffixes = _hostRun.HasAffixes,
+            RunId = _hostRun.RunId,
+            Rejoin = _hostRun.Rejoin,
         };
         p.Affixes.AddRange(_hostRun.Affixes);
         _hostRun = p;
+    }
+
+    private static float _lastJoinRequest = -99f;
+
+    /// <summary>1.6.0, host: a client in the menu asked to join our run (RunJoinRequest). With AllowRejoin, forget
+    /// that we already sent it the run (it surrendered and came back): HostRejoinTick sends it again, and the client
+    /// keeps its build if it's the same run (RejoinProgress). Without, tell the host how to allow it.</summary>
+    internal static void OnJoinRequest(byte slot)
+    {
+        if (NetworkManager.Role != NetRole.Host) return;
+        var r = CoopSession.Get(slot);
+        string name = r?.Name ?? $"slot {slot}";
+        if (_hostRun == null || !CoopSession.LocalInRun)
+        {
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][run] Host: {name} asked to join, but we're not in a run.");
+            return;
+        }
+        if (!Plugin.AllowRejoin.Value)
+        {
+            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][run] Host: {name} asked to join the run; AllowRejoin is off.");
+            CoopSession.Notice(Ui.Loc.Msg("nt.join_wanted", ("name", name)), 8f);
+            return;
+        }
+        _rejoinSent.Remove(slot);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][run] Host: {name} asked to join the run - it will be sent the RunStart.");
     }
 
     internal static void HostRejoinTick()
@@ -156,6 +206,8 @@ public static class RunSync
             Mode = Global.SelectedGameMode,
             MasteryTier = Global.MasteryDifficultyTier,
             MasteryLevel = Global.MasteryDynamicLevel,
+            RunId = UnityEngine.Random.Range(1, int.MaxValue),
+            Rejoin = Plugin.AllowRejoin.Value,
         };
         if (p.Mode == GameModes.Survivor)
         {
@@ -176,6 +228,8 @@ public static class RunSync
         w.Put(p.HasAffixes);
         w.Put((ushort)p.Affixes.Count);
         foreach (var a in p.Affixes) w.Put(a);
+        w.Put(p.RunId);
+        w.Put(p.Rejoin);
     }
 
     private static RunParams ReadParams(NetDataReader r)
@@ -190,11 +244,13 @@ public static class RunSync
         };
         int n = r.GetUShort();
         for (int i = 0; i < n; i++) p.Affixes.Add(r.GetString());
+        p.RunId = r.GetInt();
+        p.Rejoin = r.GetBool();
         return p;
     }
 
     private static string Describe(RunParams p) =>
-        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}]";
+        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}] run={p.RunId}";
 
     // =====================================================================================
     // Client: follow the host
@@ -206,6 +262,50 @@ public static class RunSync
         if (NetworkManager.Role != NetRole.Client) return;
 
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][run] Client: RunStart received: {Describe(p)}");
+        // 1.6.0: right after reaching the menu (an end screen just closed) its UI is still being built; a scene change
+        // started then never finished (stuck on Loading). Held until the menu has been up MenuSettleSeconds.
+        if (!MenuSettled())
+        {
+            _pendingRun = p;
+            _pendingRunAt = UnityEngine.Time.unscaledTime;
+            Plugin.StaticLog.LogInfo("[SoulstoneCoop][run] Client: menu not settled yet - the RunStart waits.");
+            return;
+        }
+        StartFromHost(p);
+    }
+
+    private const float MenuSettleSeconds = 2f;
+    private static RunParams? _pendingRun;
+    private static float _pendingRunAt, _menuSince = -1f;
+
+    private static bool MenuSettled()
+    {
+        if (CoopSession.LocalInRun || CoopSession.LocalLoading) return true; // TryStartClientRun refuses those itself
+        return _menuSince >= 0f && UnityEngine.Time.unscaledTime - _menuSince >= MenuSettleSeconds;
+    }
+
+    /// <summary>1.6.0, client, every frame (CoopSession): how long the menu has been up, and a held RunStart.</summary>
+    internal static void ClientRunTick()
+    {
+        bool inMenu = false;
+        try { inMenu = MainUIManager.Instance != null && UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == MenuScene; } catch { }
+        if (!inMenu) _menuSince = -1f;
+        else if (_menuSince < 0f) _menuSince = UnityEngine.Time.unscaledTime;
+        if (_pendingRun == null) return;
+        if (NetworkManager.Role != NetRole.Client || !CoopSession.Connected || UnityEngine.Time.unscaledTime - _pendingRunAt > 30f)
+        {
+            _pendingRun = null;
+            return;
+        }
+        if (!MenuSettled()) return;
+        var p = _pendingRun;
+        _pendingRun = null;
+        Plugin.StaticLog.LogInfo("[SoulstoneCoop][run] Client: menu settled - starting the held RunStart.");
+        StartFromHost(p);
+    }
+
+    private static void StartFromHost(RunParams p)
+    {
         string? refuse = null;
         try { refuse = TryStartClientRun(p); }
         catch (Exception ex)
@@ -241,6 +341,7 @@ public static class RunSync
         if (missing != null) return missing;
 
         PrepareClientRun(p);
+        RejoinProgress.BeforeClientRunLoad(p.RunId, p.Rejoin, p.HasAffixes ? p.Affixes : null); // our build back, same run only
         Enemies.ClientPuppets.ResetForNewRun();
         PauseSync.ResetForRun();
         CoopSession.BeginLoading();
@@ -264,6 +365,8 @@ public static class RunSync
         Global.MasteryDifficultyTier = p.MasteryTier;
         Global.MasteryDynamicLevel = p.MasteryLevel;
         _clientRun = p;
+        RejoinProgress.CurrentRunId = p.RunId;
+        RejoinProgress.HostAllowsRejoin = p.Rejoin;
         _hostProgression = null;
         if (p.HasAffixes) _affixOverrides = 0;
     }
@@ -492,7 +595,7 @@ public static class RunSync
         get
         {
             // Never in our own old scene during a portal/Restart: LoadNextStageAfterDelay waits on scaled time.
-            bool hold = CoopSession.LocalInRun && !CoopSession.StageTransition && CoopSession.AnyRemoteChangingScene
+            bool hold = CoopSession.LocalInRun && !CoopSession.StageTransition && CoopSession.AnyRemoteLoadingWithUs
                         && Time.unscaledTime - CoopSession.LocalRunStartTime < HoldTimeout;
             if (hold != _holding)
             {

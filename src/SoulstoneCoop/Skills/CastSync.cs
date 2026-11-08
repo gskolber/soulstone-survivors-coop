@@ -73,6 +73,9 @@ public sealed class CastMessage
 /// the other side's RemoteCaster. Visual only - the damage keeps flowing through phase 3 (ClientDamage /
 /// DamageToClient). Channeled skills also get a SkillChannelEnd when the local channel stops.
 /// SkillCast and SkillChannelEnd share ReliableOrdered: an end must never overtake its start.
+/// While a channel is open, its aim (what the skill's GetTargetFrontPosition / GetTargetFrontPositionGround funcs
+/// return, re-read by ChannelingSkill.OnUpdate 0x516B00 every frame) goes out ~10 times a second as SkillChannelAim
+/// (Sequenced), so the partner's beam follows the cursor instead of staying where the cast started.
 /// </summary>
 public static class CastSync
 {
@@ -89,7 +92,14 @@ public static class CastSync
         public ChannelingSkill? Skill;
         public bool SeenTrue;
         public float Age;
+        // Aim: the cast's own funcs, invoked with the skill that was cast.
+        public Skill? Owner;
+        public Il2CppSystem.Func<Skill, Vector3>? FrontFunc, GroundFunc;
+        public float AimTimer;
     }
+
+    private const float AimInterval = 0.1f;
+    private static int _aimSent, _aimRecv, _aimErrors;
 
     private static readonly Dictionary<string, OpenChannel> LocalChannels = new();
 
@@ -114,6 +124,7 @@ public static class CastSync
             _localCasterPtr = caster != null ? caster.Pointer : IntPtr.Zero;
             _localPlayerPtr = local != null ? local.Pointer : IntPtr.Zero;
             PollChannels(unscaledDeltaTime);
+            Watchdog();
         }
         catch (Exception ex)
         {
@@ -132,18 +143,20 @@ public static class CastSync
                 $"[SoulstoneCoop][casts] {NetworkManager.Role}: sent={_sent} ({_bytesSent} B) recv={_recv} played={_played} failed={failed} " +
                 $"(noCaster={_noCaster} noSkill={_noSkill} rejected={_rejected} error={_errors}) skippedSummon={_skippedSummon} " +
                 $"captureErrors={_captureErrors} channelEnds={_channelEndsSent}/{_channelEndsRecv} openChannels={RemoteCaster.OpenChannels}/{LocalChannels.Count} " +
+                $"aim={_aimSent}/{_aimRecv}{(_aimErrors > 0 ? $" aimErrors={_aimErrors}" : "")} " +
                 $"blockedEffects={_blockedEffects} blockedDamage={_blockedDamage} numbersHidden={numbersHidden} culledFar={_culledFar} caster={RemoteCaster.Active} copies={RemoteCaster.CopyCount} " +
                 $"ghostAnim={RemoteCaster.GhostAnimPlayed}/{RemoteCaster.GhostAnimPlayed + RemoteCaster.GhostAnimMissing}");
             RemoteCaster.GhostAnimPlayed = RemoteCaster.GhostAnimMissing = 0;
         }
         _sent = _recv = _played = _noCaster = _noSkill = _rejected = _errors = _skippedSummon = _captureErrors = 0;
         _channelEndsSent = _channelEndsRecv = _blockedEffects = _blockedDamage = _bytesSent = _culledFar = 0;
+        _aimSent = _aimRecv = 0;
     }
 
     // ---------------- sender ----------------
 
     /// <summary>"ArcaneMissiles-Skill(Clone)" -> "ArcaneMissiles-Skill", the name under Resources/Skill-Prefabs.</summary>
-    private static string KeyOf(Skill skill)
+    internal static string KeyOf(Skill skill)
     {
         string name = skill.gameObject.name;
         int i = name.IndexOf("(Clone)", StringComparison.Ordinal);
@@ -158,8 +171,15 @@ public static class CastSync
 
         string key = KeyOf(skill);
         var type = skill.SkillType;
-        // A summon would be a real Entity on the other side, dealing its own damage: not replicated.
-        if ((type & SkillType.Summon) != 0) { _skippedSummon++; return; }
+        // A summon would be a real Entity on the other side, dealing its own damage: not replicated. Not only the
+        // Summon-tagged skills: the ascensions' summons (Legionnaire's centurions, Demon Hunter's demons, Apocalypse
+        // knights) are set up from power-up data without that tag, and replaying them broke the others' casting.
+        if (Summons(skill))
+        {
+            _skippedSummon++;
+            if (LoggedSummonKeys.Add(key)) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][casts] '{key}' summons units (type={type}): not sent, the partners see the units through SummonSync.");
+            return;
+        }
 
         var m = new CastMessage { Key = key, SkillType = (int)type, Yaw = local.transform.eulerAngles.y };
         m.Level = (byte)Mathf.Clamp(skill.SkillLevel, 0, 255);
@@ -199,10 +219,25 @@ public static class CastSync
         _bytesSent += w.Length;
 
         if (channel != null && !LocalChannels.ContainsKey(key))
-            LocalChannels[key] = new OpenChannel { Key = key, Func = channel, Skill = skill.TryCast<ChannelingSkill>() };
+        {
+            Il2CppSystem.Func<Skill, Vector3>? front = null, ground = null;
+            try
+            {
+                if (m.Has(CastMessage.FFrontFunc)) front = p.GetTargetFrontPosition;
+                if (m.Has(CastMessage.FGroundFunc)) ground = p.GetTargetFrontPositionGround;
+            }
+            catch (Exception ex) { _aimErrors++; Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Aim funcs of '{key}': {ex.Message}"); }
+            LocalChannels[key] = new OpenChannel
+            {
+                Key = key, Func = channel, Skill = skill.TryCast<ChannelingSkill>(),
+                Owner = skill, FrontFunc = front, GroundFunc = ground,
+            };
+        }
 
         if (LoggedKeys.Add(key))
         {
+            var rot = skill.TryCast<TemporaryRotatingSkill>(); // 1.6.0: compared with the replica's (FieldDump)
+            if (rot != null) FieldDump.Log(rot, $"local '{key}'", FieldDump.RotatingOffsets);
             Plugin.StaticLog.LogInfo(
                 $"[SoulstoneCoop][casts] First local cast of '{key}' ({skill.GetIl2CppType().Name}, type={type}, level={m.Level}, " +
                 $"counts={m.CountA}/{m.CountB}, scale={m.Scale:F2}, flags={m.Flags}, target={m.TargetKind}).");
@@ -229,7 +264,7 @@ public static class CastSync
                 }
             }
             catch { on = false; }
-            if (on) continue;
+            if (on) { SendAim(ch, dt); continue; }
             (ended ??= new List<string>()).Add(ch.Key);
         }
         if (ended == null) return;
@@ -245,7 +280,131 @@ public static class CastSync
         }
     }
 
+    /// <summary>An open channel's current aim, ~10 times a second. The funcs are the ones the local skill polls itself
+    /// (the auto-aim / cursor position), so this is exactly where our own beam points right now.</summary>
+    private static void SendAim(OpenChannel ch, float dt)
+    {
+        if (ch.Owner == null || (ch.FrontFunc == null && ch.GroundFunc == null)) return;
+        ch.AimTimer += dt;
+        if (ch.AimTimer < AimInterval || !NetworkManager.HasPeer) return;
+        ch.AimTimer = 0f;
+        byte flags = 0;
+        Vector3 front = default, ground = default;
+        try
+        {
+            if (ch.FrontFunc != null) { front = ch.FrontFunc.Invoke(ch.Owner); flags |= 1; }
+            if (ch.GroundFunc != null) { ground = ch.GroundFunc.Invoke(ch.Owner); flags |= 2; }
+        }
+        catch (Exception ex)
+        {
+            // A func that throws once will again: stop sending this channel's aim (the cast's start aim stays).
+            ch.FrontFunc = ch.GroundFunc = null;
+            if (_aimErrors++ < 5) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Aim of '{ch.Key}': {ex.Message}");
+            return;
+        }
+        var w = new NetDataWriter();
+        w.Put((byte)PacketType.SkillChannelAim);
+        w.Put(ch.Key);
+        w.Put(flags);
+        if ((flags & 1) != 0) { w.Put(front.x); w.Put(front.y); w.Put(front.z); }
+        if ((flags & 2) != 0) { w.Put(ground.x); w.Put(ground.y); w.Put(ground.z); }
+        NetworkManager.Send(w, DeliveryMethod.Sequenced);
+        _aimSent++;
+        _bytesSent += w.Length;
+    }
+
     private static byte ClampByte(int v) => (byte)Mathf.Clamp(v, 0, 255);
+
+    // ---------------- summons: never replayed ----------------
+
+    private static readonly HashSet<string> LoggedSummonKeys = new();
+    private static readonly Dictionary<IntPtr, bool> SummonCache = new();
+
+    /// <summary>A new match (RemoteCaster.OnMatchStarted): pointers of the old scene's skills may be reused.</summary>
+    internal static void ClearSummonCache() => SummonCache.Clear();
+
+    /// <summary>Does this skill (an instance or a prefab) bring units into the world: the Summon tag, or any
+    /// SummonEntity*Effect under it. Cached per object (skill instances and prefabs live for the whole match).</summary>
+    internal static bool Summons(Skill? skill)
+    {
+        if (skill == null) return false;
+        if ((skill.SkillType & SkillType.Summon) != 0) return true;
+        var ptr = skill.Pointer;
+        if (SummonCache.TryGetValue(ptr, out bool cached)) return cached;
+        bool found = false;
+        try
+        {
+            foreach (var c in skill.GetComponentsInChildren<Component>(true))
+            {
+                if (c == null) continue;
+                if (global::SoulstoneCoop.Summons.SummonSync.SummonPrefabsOf(c) != null) { found = true; break; }
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][casts] Checking '{skill.gameObject.name}' for summons: {ex.Message}"); }
+        SummonCache[ptr] = found;
+        return found;
+    }
+
+    // ---------------- watchdog: the local player stopped casting ----------------
+
+    private const float StallSeconds = 12f;
+    private const float StallReportInterval = 60f;
+    private static float _lastLocalCast = -1f, _stallReportAt, _watchdogTimer;
+    private static int _stalls;
+
+    internal static void NoteLocalCast() => _lastLocalCast = Time.time;
+
+    /// <summary>In a co-op run, alive, not paused, auto-cast on and enemies around, but no cast of ours for
+    /// StallSeconds of game time: the "can't attack any more" state (the ascension summons report). Logs what
+    /// could be in the way, and turns off any other player auto-cast that was never set up (its UpdateAll would throw
+    /// for every frame, which stops the loop that also runs ours).</summary>
+    private static void Watchdog()
+    {
+        // Perf: once a second is plenty (the cast time itself comes from the capture patch).
+        _watchdogTimer += Time.unscaledDeltaTime;
+        if (_watchdogTimer < 1f) return;
+        _watchdogTimer = 0f;
+        if (!NetworkManager.HasPeer || !GameManagerUtil.HasGameManager || !Lobby.CoopSession.LocalInRun || Time.timeScale <= 0f) { _lastLocalCast = -1f; return; }
+        var local = GameState.LocalPlayerEntity;
+        var auto = local != null ? local._playerSkillAutoCast : null;
+        if (local == null || auto == null || auto.ForceStopAutoCasting || Life.CoopLife.LocalOut) { _lastLocalCast = Time.time; return; }
+        if (_lastLocalCast < 0f || Time.time < _lastLocalCast) { _lastLocalCast = Time.time; return; }
+        float idle = Time.time - _lastLocalCast;
+        if (idle < StallSeconds || Time.unscaledTime < _stallReportAt) return;
+
+        int near = 0;
+        var all = EntityRegistry.AllEntities;
+        var at = local.transform.position;
+        if (all != null)
+            for (int i = 0; i < all.Count; i++)
+            {
+                var e = all[i];
+                if (e != null && ClientSpawnBlock.IsEnemyTeam(e) && (e.transform.position - at).sqrMagnitude < 15f * 15f) near++;
+            }
+        if (near == 0) return; // nothing to hit: not casting is normal
+        _stallReportAt = Time.unscaledTime + StallReportInterval;
+        _stalls++;
+
+        var autos = new List<string>();
+        int healed = 0;
+        try
+        {
+            foreach (var a in UnityEngine.Object.FindObjectsOfType<PlayerSkillAutoCastComponent>())
+            {
+                if (a == null) continue;
+                var owner = a._casterEntity;
+                bool mine = a.Pointer == auto.Pointer;
+                autos.Add($"{a.gameObject.name}{(mine ? "(ours)" : owner == null ? "(NOT SET UP)" : $"(of {owner.gameObject.name})")}");
+                if (!mine && owner == null && a.enabled) { a.enabled = false; healed++; }
+            }
+        }
+        catch (Exception ex) { autos.Add("scan failed: " + ex.Message); }
+        Plugin.StaticLog.LogWarning(
+            $"[SoulstoneCoop][casts] Local player has not cast for {idle:F0} s with {near} enemies within 15 u (stall #{_stalls}). " +
+            $"autoCasts=[{string.Join(", ", autos)}]{(healed > 0 ? $" - {healed} never-set-up auto-cast(s) turned off" : "")}; " +
+            $"remote casters={RemoteCaster.Active} copies=[{RemoteCaster.DescribeCopies()}] replicaSummonsRemoved={RemoteCaster.ReplicaSummonsRemoved}. " +
+            "Please send this log.");
+    }
 
     // ---------------- receiver ----------------
 
@@ -262,6 +421,17 @@ public static class CastSync
             case RemoteCaster.PlayResult.Culled: _culledFar++; break;
             default: _errors++; break;
         }
+    }
+
+    public static void OnSkillChannelAim(NetDataReader reader)
+    {
+        string key = reader.GetString();
+        byte flags = reader.GetByte();
+        Vector3 front = default, ground = default;
+        if ((flags & 1) != 0) front = new Vector3(reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
+        if ((flags & 2) != 0) ground = new Vector3(reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
+        _aimRecv++;
+        RemoteCaster.OnChannelAim(PacketRouter.From, key, flags, front, ground);
     }
 
     public static void OnSkillChannelEnd(NetDataReader reader)
@@ -285,6 +455,7 @@ public static class LocalCastCapturePatch
         try
         {
             if (!__result || __instance == null || !CastSync.IsLocalCaster(__instance)) return;
+            CastSync.NoteLocalCast();
             CastSync.OnLocalCast(skill, parameters);
         }
         catch (Exception ex)

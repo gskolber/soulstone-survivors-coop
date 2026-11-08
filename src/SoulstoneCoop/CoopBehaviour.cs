@@ -158,10 +158,23 @@ public class CoopBehaviour : MonoBehaviour
             Enemies.RemoteProxy.Tick(Time.unscaledDeltaTime);
             Enemies.ClientIncomingDamage.Tick(Time.unscaledDeltaTime);
             Skills.CastSync.Tick(Time.unscaledDeltaTime);
+            Skills.AlwaysOnSync.Tick(Time.unscaledDeltaTime);
+            AscensionSync.Tick(Time.unscaledDeltaTime);
+            AscensionFx.Tick(Time.unscaledDeltaTime);
+            ModSkinLoader.Tick();
+            Summons.PassiveObjectSync.Tick(Time.unscaledDeltaTime);
+            Summons.PowersProbe.Tick(Time.unscaledDeltaTime); // 1.4.1 diagnostic, log only
+            Loot.TaskObjectiveSync.Tick(Time.unscaledDeltaTime);
+            Lobby.RejoinProgress.Tick(Time.unscaledDeltaTime);
+            Enemies.HostHazards.Tick(Time.unscaledDeltaTime);
             Loot.LootSync.Tick(Time.unscaledDeltaTime);
+            Loot.ChestSync.Tick(Time.unscaledDeltaTime);
+            Loot.ChestDebug.Tick(); // debug: F3 spawns a chest/ore next to the host
+            MechanicDebug.Tick(); // debug: F2 gives your hero its mini-game mechanic for this run
             Life.CoopLife.Tick(Time.unscaledDeltaTime);
             Lobby.PortalSync.Tick(Time.unscaledDeltaTime);
             Enemies.EnemyCasts.Tick(Time.unscaledDeltaTime);
+            Enemies.EnemyAttackAnims.Tick(Time.unscaledDeltaTime);
             Enemies.SpecialsDebug.Tick(Time.unscaledDeltaTime);
             Enemies.ObjectiveSync.Tick(Time.unscaledDeltaTime);
             Enemies.EnemyScaling.Tick(Time.unscaledDeltaTime);
@@ -264,7 +277,7 @@ public class CoopBehaviour : MonoBehaviour
 
     private void HandleDebugHotkeys()
     {
-        if (Keyboard.current == null) return;
+        if (!Plugin.TestKeysOn || Keyboard.current == null) return; // 1.6.2: test keys only with [Debug] TestKeys
         if (Ui.CoopUi.IsTyping) return; // Delete/Insert are also editing keys in the IP field
 
         // Insert = host, Delete = connect to localhost. Debug-only until there's a real UI.

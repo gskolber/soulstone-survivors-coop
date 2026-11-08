@@ -37,6 +37,10 @@ public static class HostEnemySync
         public bool HasPrefabType;
         public int PrefabType;
         public bool DataIsElite, DataIsEndless;
+        // Perf: StatsComponent.GetMaxHealth works the stats out each call; the snapshot (20 Hz x every enemy) reads it
+        // at most once a second per enemy.
+        public float MaxHealthCache;
+        public float MaxHealthAt = -1f;
     }
 
     // Phase 4D: captured right before Entity.Setup by the patches at the end of this file.
@@ -462,6 +466,7 @@ public static class HostEnemySync
         var local = GameState.LocalPlayerEntity;
         Vector3 basePos = local != null ? local.transform.position : Vector3.zero;
         ushort seq = ++_snapshotSeq;
+        float now = Time.unscaledTime;
         uint hostMs = RemoteClock.NowMs();
         int totalBytes = 0;
 
@@ -475,7 +480,12 @@ public static class HostEnemySync
                 var t = SnapshotScratch[start + k];
                 var e = t.Entity;
                 var tr = e.transform;
-                float max = e._stats != null ? e._stats.GetMaxHealth() : 0f;
+                if (t.MaxHealthAt < 0f || now - t.MaxHealthAt > 1f)
+                {
+                    t.MaxHealthCache = e._stats != null ? e._stats.GetMaxHealth() : 0f;
+                    t.MaxHealthAt = now;
+                }
+                float max = t.MaxHealthCache;
                 float pct = e._health != null && max > 0f ? e._health.CurrentHealth / max : 1f;
                 EnemySnapshotFormat.WriteEntry(w, t.NetId, tr.position, basePos, tr.eulerAngles.y, pct);
             }

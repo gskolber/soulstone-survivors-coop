@@ -23,6 +23,11 @@ public sealed class RemotePlayer
     /// <summary>The character model's own Animator on the current ghost (locomotion, cast CrossFade, rebuild check).</summary>
     public Animator? ModelAnimator;
     public int GhostRebuilds, IdentityRebuilds;
+    /// <summary>The skin id the ghost's character model was built from (AscensionSync builds the other models with it).</summary>
+    public string GhostSkinId = "";
+    /// <summary>Bumped whenever ModelAnimator changes (new ghost, or AscensionSync swapped the model): whoever caches the
+    /// ghost's animators (PlayerSync, RemoteCaster) takes them again.</summary>
+    public int ModelVersion;
 
     // ---- positions (PlayerSync) ----
     /// <summary>Positions received for the current ghost (0 = none yet: the proxy and the remote caster wait for one).</summary>
@@ -34,6 +39,9 @@ public sealed class RemotePlayer
     public bool IsHost => Slot == Net.Players.HostSlot;
     public bool InRun => Place == LobbyPlace.InRun;
     public bool ChangingScene => Place == LobbyPlace.Loading || Place == LobbyPlace.Transition;
+
+    /// <summary>1.6.1: when this player last started changing scene (Menu -> Loading/Transition), unscaled time.</summary>
+    public float ChangingSince = -1f;
 
     public string Name => Info.Known && Info.Name.Length > 0 ? Info.Name : FallbackName(Slot);
 

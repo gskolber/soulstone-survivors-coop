@@ -149,7 +149,10 @@ public static class SummonSync
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][summons] Own summon #{o.Id} '{name}' (skill '{o.SkillKey}', anim {o.Anim}).");
     }
 
-    /// <summary>The skill of the local player whose summon effects list this prefab (cached per prefab).</summary>
+    /// <summary>The skill of the local player whose summon effects list this prefab (cached per prefab).
+    /// 1.3.1: no generic interop helpers here (TryCast / GetComponentInParent&lt;Skill&gt; threw "type argument 'T' violates
+    /// the constraint" on the ascension summons, so their key went out empty and nobody else could show them): the
+    /// effect is recognised by its Il2Cpp class and wrapped by pointer, the skill found by walking up the parents.</summary>
     private static string FindSkillKey(Entity local, Entity prefab)
     {
         if (SkillKeyByPrefab.TryGetValue(prefab.Pointer, out var k)) return k;
@@ -159,21 +162,48 @@ public static class SummonSync
             foreach (var c in local.GetComponentsInChildren<Component>(true))
             {
                 if (c == null) continue;
-                Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Entity>? list =
-                    c.TryCast<SummonEntityEffect>()?.PossiblePrefabs
-                    ?? c.TryCast<SummonEntityPositionalEffect>()?.PossiblePrefabs
-                    ?? c.TryCast<SummonEntityAndForgetPositionalEffect>()?.PossiblePrefabs;
+                var list = SummonPrefabsOf(c);
                 if (list == null) continue;
                 bool hit = false;
                 for (int i = 0; i < list.Length && !hit; i++) hit = list[i] != null && list[i].Pointer == prefab.Pointer;
                 if (!hit) continue;
-                var skill = c.GetComponentInParent<Skill>(true);
-                if (skill != null) { found = Enemies.EnemyPrefabKeys.StripClone(skill.gameObject.name); break; }
+                string skill = SkillNameAbove(c.transform);
+                if (skill.Length > 0) { found = skill; break; }
             }
         }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][summons] Finding the skill of '{prefab.name}': {ex.Message}"); }
         SkillKeyByPrefab[prefab.Pointer] = found;
+        if (found.Length > 0) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][summons] '{Enemies.EnemyPrefabKeys.StripClone(prefab.name)}' is summoned by skill '{found}'.");
         return found;
+    }
+
+    // Looked up on first use (not in the static constructor: a failure there would take the whole class down).
+    private static Il2CppSystem.Type? _summonEffectType, _summonPositionalType, _summonForgetType, _skillClass;
+    private static Il2CppSystem.Type SummonEffectType => _summonEffectType ??= Il2CppType.Of<SummonEntityEffect>();
+    private static Il2CppSystem.Type SummonPositionalType => _summonPositionalType ??= Il2CppType.Of<SummonEntityPositionalEffect>();
+    private static Il2CppSystem.Type SummonForgetType => _summonForgetType ??= Il2CppType.Of<SummonEntityAndForgetPositionalEffect>();
+    private static Il2CppSystem.Type SkillClass => _skillClass ??= Il2CppType.Of<Skill>();
+
+    /// <summary>PossiblePrefabs of a SummonEntity*Effect component, or null for any other component.</summary>
+    internal static Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Entity>? SummonPrefabsOf(Component c)
+    {
+        var t = c.GetIl2CppType();
+        if (t == null) return null;
+        if (SummonForgetType.IsAssignableFrom(t)) return new SummonEntityAndForgetPositionalEffect(c.Pointer).PossiblePrefabs;
+        if (SummonPositionalType.IsAssignableFrom(t)) return new SummonEntityPositionalEffect(c.Pointer).PossiblePrefabs;
+        if (SummonEffectType.IsAssignableFrom(t)) return new SummonEntityEffect(c.Pointer).PossiblePrefabs;
+        return null;
+    }
+
+    /// <summary>The name ("X-Skill", Clone stripped) of the first object holding a Skill at or above this one.</summary>
+    private static string SkillNameAbove(Transform? t)
+    {
+        while (t != null)
+        {
+            if (t.GetComponent(SkillClass) != null) return Enemies.EnemyPrefabKeys.StripClone(t.gameObject.name);
+            t = t.parent;
+        }
+        return "";
     }
 
     private static AnimKind AnimOf(Component root)
@@ -286,12 +316,29 @@ public static class SummonSync
         }
     }
 
-    /// <summary>CompanionComponent.AddCompanionType loads them from Resources "Companions/..." (globalgamemanagers lists
-    /// companions/dog, hydra, parrot...): accepted only if that path gives back this very prefab.</summary>
+    /// <summary>CompanionComponent.AddCompanionType(data, path) prefix: the folder our own companions (skill tree and
+    /// weapon ones) are loaded from.</summary>
+    internal static void OnCompanionTypeAdded(string? folder)
+    {
+        if (string.IsNullOrEmpty(folder) || CompanionFolders.Contains(folder)) return;
+        CompanionFolders.Add(folder);
+        Plugin.StaticLog.LogInfo($"[SoulstoneCoop][summons] Own companions come from '{folder}'.");
+    }
+
+    private static readonly List<string> CompanionFolders = new();
+
+    /// <summary>CompanionComponent.AddCompanionType loads them from Resources: "Companions/...", the skill tree's and the
+    /// weapons' folders (the latter captured from AddCompanionType). Accepted only if that path gives back this very prefab.</summary>
     private static string CompanionPath(Entity? prefab, string name)
     {
         if (prefab == null) return "";
-        foreach (var path in new[] { "Companions/" + name, "Companions/SkillTree/" + name })
+        var candidates = new List<string> { "Companions/" + name, "Companions/SkillTree/" + name };
+        foreach (var f in CompanionFolders)
+        {
+            candidates.Add(f.EndsWith("/") ? f + name : f + "/" + name);
+            candidates.Add(f + name);
+        }
+        foreach (var path in candidates)
         {
             try
             {
@@ -563,8 +610,9 @@ public static class SummonSync
         {
             m.Failed = true;
             _prefabFailures++;
-            if (FailedNames.Count < 8) FailedNames.Add(m.PrefabName);
-            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][summons] No prefab for the partner's {m.Kind} '{m.PrefabName}' (skill '{m.SkillKey}', res '{m.ResPath}') - it stays invisible.");
+            bool firstMiss = !FailedNames.Contains(m.PrefabName);
+            if (FailedNames.Count < 8 && firstMiss) FailedNames.Add(m.PrefabName);
+            if (firstMiss) Plugin.StaticLog.LogWarning($"[SoulstoneCoop][summons] No prefab for the partner's {m.Kind} '{m.PrefabName}' (skill '{m.SkillKey}', res '{m.ResPath}') - it stays invisible.");
             return;
         }
         GameObject? holder = null;
@@ -605,6 +653,9 @@ public static class SummonSync
     {
         string cacheKey = $"{(byte)m.Kind}|{m.SkillKey}|{m.ResPath}|{m.PrefabName}";
         if (TemplateCache.TryGetValue(cacheKey, out var cached) && cached != null) return cached;
+        // 1.3.2: a miss is remembered for MissRetrySeconds (each try may scan every loaded Entity: a summon that
+        // can't be found here, spawned over and over, was a hitch per spawn).
+        if (TemplateMissAt.TryGetValue(cacheKey, out float missAt) && Time.unscaledTime - missAt < MissRetrySeconds) return null;
         GameObject? found = null;
         try
         {
@@ -619,8 +670,12 @@ public static class SummonSync
         }
         catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][summons] Resolving '{m.PrefabName}': {ex.Message}"); }
         TemplateCache[cacheKey] = found;
+        if (found == null) TemplateMissAt[cacheKey] = Time.unscaledTime; else TemplateMissAt.Remove(cacheKey);
         return found;
     }
+
+    private const float MissRetrySeconds = 20f;
+    private static readonly Dictionary<string, float> TemplateMissAt = new();
 
     /// <summary>The summoning skill's own prefab (same on both machines) and its SummonEntity*Effect.PossiblePrefabs.</summary>
     private static GameObject? FindInSkillPrefab(string skillKey, string name)
@@ -630,9 +685,7 @@ public static class SummonSync
         foreach (var c in skill.GetComponentsInChildren<Component>(true))
         {
             if (c == null) continue;
-            var list = c.TryCast<SummonEntityEffect>()?.PossiblePrefabs
-                ?? c.TryCast<SummonEntityPositionalEffect>()?.PossiblePrefabs
-                ?? c.TryCast<SummonEntityAndForgetPositionalEffect>()?.PossiblePrefabs;
+            var list = SummonPrefabsOf(c);
             if (list == null) continue;
             for (int i = 0; i < list.Length; i++)
                 if (list[i] != null && Enemies.EnemyPrefabKeys.StripClone(list[i].name) == name) return list[i].gameObject;
@@ -676,11 +729,43 @@ public static class SummonOwnerCapturePatch
         try
         {
             if (summonedEntity == null || NetworkManager.Role == NetRole.None) return;
+            // A replayed (visual-only) skill must never put a real unit in this world: the partner's own units are
+            // shown here as SummonSync clones. Covers the stand-ins of both sides.
+            if (Skills.RemoteCaster.IsCaster(casterEntity) || Enemies.RemoteProxy.IsProxy(casterEntity))
+            {
+                Skills.RemoteCaster.OnReplicaSummon(summonedEntity);
+                return;
+            }
             SummonSync.OnSummonSetup(casterEntity, summonedEntity, originalSummonPrefab);
         }
         catch (Exception ex)
         {
             Plugin.StaticLog.LogError($"[SoulstoneCoop] SummonOwnerCapturePatch: {ex}");
         }
+    }
+}
+
+/// <summary>Both sides: where our companions come from (weapon companions live in their own Resources folder).
+/// Signature: two references (CompanionData, string): trampoline-safe.</summary>
+public static class CompanionFolderCapturePatch
+{
+    /// <summary>By hand (Plugin): a failure only loses the weapon companions' folder.</summary>
+    internal static void Apply(Harmony harmony)
+    {
+        try
+        {
+            System.Reflection.MethodInfo? target = null;
+            foreach (var mi in typeof(CompanionComponent).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly))
+                if (mi.Name == nameof(CompanionComponent.AddCompanionType) && mi.GetParameters().Length == 2) { target = mi; break; }
+            if (target == null) throw new MissingMethodException(nameof(CompanionComponent), nameof(CompanionComponent.AddCompanionType));
+            harmony.Patch(target, prefix: new HarmonyMethod(typeof(CompanionFolderCapturePatch), nameof(Prefix)));
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop][summons] Could not patch CompanionComponent.AddCompanionType: {ex.Message}"); }
+    }
+
+    public static void Prefix(string path)
+    {
+        try { SummonSync.OnCompanionTypeAdded(path); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CompanionFolderCapturePatch: {ex.Message}"); }
     }
 }

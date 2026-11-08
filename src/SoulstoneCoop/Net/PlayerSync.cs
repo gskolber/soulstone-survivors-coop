@@ -61,6 +61,7 @@ public static class PlayerSync
         public readonly List<Sample> Buffer = new();
         public readonly RemoteClock Clock = new(); // phase 8, [Coop] SenderClock
         public IntPtr AnimGhostPtr;
+        public int AnimModelVersion;
         public Animator[]? Animators;
         public Vector3 LastGhostPos;
         public bool HasLastGhostPos;
@@ -206,6 +207,7 @@ public static class PlayerSync
         byte slot = PacketRouter.From;
         if (!Players.IsPresent(slot)) return;
         if (on) DashesReceived++;
+        if (NetworkManager.Role == NetRole.Host) Enemies.RemoteProxy.OnClientDash(slot, on); // 1.6.1: dash dodge on the stand-in
         var events = MotionOf(slot).DashEvents;
         events.Add(new DashEvent { At = Time.unscaledTime + InterpDelay, On = on });
         if (events.Count > 16) events.RemoveAt(0);
@@ -331,8 +333,9 @@ public static class PlayerSync
     {
         var ghost = r.Ghost;
         if (ghost == null || dt <= 0f) return;
-        if (ghost.Pointer != m.AnimGhostPtr || m.Animators == null)
+        if (ghost.Pointer != m.AnimGhostPtr || m.Animators == null || m.AnimModelVersion != r.ModelVersion)
         {
+            m.AnimModelVersion = r.ModelVersion;
             // The ghost is rebuilt now and then (CoopBehaviour.RebuildGhostIfModelInactive): re-cache.
             m.AnimGhostPtr = ghost.Pointer;
             var model = r.ModelAnimator;

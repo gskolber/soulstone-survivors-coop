@@ -72,7 +72,7 @@ Revisei todos os chamadores de `AIUtil.GetAllEntitiesInSpecificTeam` fora de che
 
 ## O que não foi feito
 
-- **Esquiva por dash:** os hits que o host calcula no proxy não sabem que o cliente estava dando dash. Resolver isso pede mandar o estado do dash com precisão de frame, ou descartar o `DamageToClient` no cliente durante o dash. As duas coisas mudam o balanceamento e precisam de teste.
+- **Esquiva por dash:** os hits que o host calcula no proxy não sabem que o cliente estava dando dash. Resolver isso pede mandar o estado do dash com precisão de frame, ou descartar o `DamageToClient` no cliente durante o dash. As duas coisas mudam o balanceamento e precisam de teste. **Feito na 1.6.1** (seção no fim), menos as power-ups "ao esquivar".
 - **Afixos do jogador no proxy:** não mexi.
 - **Stun:** se o jogo nunca atordoa jogadores, o encaminhamento simplesmente não faz nada (sem `StunnableComponent` ou com imunidade).
 
@@ -99,3 +99,16 @@ Host e cliente na mesma versão deste branch, Desert, perto um do outro.
 5. **Resistência (item 5):** sem efeito visível. Só conferir que o `ClientState` continua chegando: o proxy acompanha a vida do cliente e não há erro `[proxy] ApplyRemoteState`.
 6. **Ações de time (item 6):** matar um boss com cutscene ou intro e confirmar que a sequência termina normalmente nas duas telas. Procurar `Kept the stand-ins out of a team query` no host e verificar que o loot continua caindo sem NRE.
 7. **Se der problema num item:** `git revert <hash do item>` e testar de novo.
+
+## 1.6.1: esquiva por dash para convidados
+
+O jogo decide a esquiva em `Skill.GetSkillEffectModifierForTarget` (0x5650B0): se a entidade alvo tem personagem (+0x260/+0x268), o `_isDashing` dele (+0x12C) vira o `IsDashDodged` do resultado. As skills dos inimigos acertam o proxy do convidado no host, e o proxy nunca dava dash.
+
+- Host: o `DashState` do cliente (que já vinha para o fantasma) agora também liga, na chegada, o `_isDashing` do `ModifiedCharacter` do proxy (`RemoteProxy.ApplyDash`, todo frame enquanto dura, com `_dashRemainingDuration` mantido em 0,1 s para o update do jogo não desligar; limite de 0,6 s se o fim se perder; nunca com o proxy caído).
+- Mesmas regras do solo: só skills; dano contínuo de status não é esquivado. O atraso da rede desloca a janela (o host vê o dash meia latência depois).
+- Fora: as power-ups "ao esquivar" (`SkillOnDashDodge`) do convidado não disparam (rodariam no proxy, que não as tem).
+- Telemetria: `dashWindows=N` na linha `[proxy] Host:`.
+
+### Como testar
+
+Em B, dê dash atravessando ataques corpo a corpo e projéteis: B não toma dano durante o dash (compare com A fazendo o mesmo). Em A, `dashWindows` > 0 no log.

@@ -672,7 +672,7 @@ public static class CoopUi
     private static void OnHost()
     {
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][ui] Host pressed.");
-        NetworkManager.StartHost();
+        NetworkManager.StartHost(); // (cancels a pending reconnect)
     }
 
     private static void OnJoin()
@@ -680,6 +680,7 @@ public static class CoopUi
         string addr = _ipField != null ? _ipField.text.Trim() : "";
         if (addr.Length == 0) addr = DefaultAddress;
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][ui] Join pressed: {addr}");
+        NetworkManager.CancelReconnect();
         try { Plugin.LastAddress.Value = addr; } catch { }
         // Phase 7: a long number is a Steam lobby code ("Copiar código" on the host), anything else an IP.
         if (Steam.SteamLobby.TryParseCode(addr, out var lobby)) Steam.SteamLobby.Join(lobby);
@@ -689,6 +690,7 @@ public static class CoopUi
     private static void OnInvite()
     {
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][ui] Invite pressed.");
+        NetworkManager.CancelReconnect();
         Steam.SteamLobby.HostAndInvite();
     }
 
@@ -723,6 +725,7 @@ public static class CoopUi
     private static void OnLeave()
     {
         Plugin.StaticLog.LogInfo("[SoulstoneCoop][ui] Disconnect pressed.");
+        NetworkManager.CancelReconnect();
         NetworkManager.Stop();
         Steam.SteamLobby.Leave(); // also cancels a lobby still being created or joined
     }

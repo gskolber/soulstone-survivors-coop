@@ -27,10 +27,12 @@ public enum PacketType : byte
     RunEndRequest = 20, // client -> host: the client surrendered or took the Home portal (ReliableOrdered)
     EnemyCast = 21,    // host -> client: a boss/elite/special enemy cast, replayed visual-only on its puppet (phase 4D, ReliableUnordered)
     ObjectiveSync = 22, // host -> client: kills, tier, completed kill objectives, boss objective Current/Total, on change + every 2 s (phase 4D fix, ReliableOrdered)
+    EnemyAttackAnim = 23, // host -> clients: regular enemies' attack animations: count u8 | count * (netId u16, state hash i32, fade f32, layer u8) (Unreliable)
     // 22-29 reserved for phase 4D
     Hello = 30,        // either way: name, character, weapon, skins, mod version (phase 6, on connect and when it changes) (ReliableOrdered)
     LobbyState = 31,   // either way: sender is in the menu / loading a run / in a run (phase 6, on change) (ReliableOrdered)
     RunStart = 32,     // host -> client: scene, mode, mastery tier/level, Survivors affixes: start the same run (phase 6) (ReliableOrdered)
+    RunJoinRequest = 34,  // client -> host, 1.6.0: the client is in the menu and pressed Fight while the host is in a run: bring me in (no payload) (ReliableOrdered)
     RunStartRefused = 33, // client -> host: could not follow RunStart, with the reason (phase 6) (ReliableOrdered)
     // 50-59: phase 5
     PartnerHealth = 50, // either way: sender's hp f32 | maxHp f32 | flags u8 (1 down, 2 dead), on change at <= 5 Hz + every 1 s (ReliableOrdered)
@@ -52,6 +54,24 @@ public enum PacketType : byte
     PauseOverride = 104, // host -> clients: mask u8 of the players whose pause the host lifted (Esc closed on the host, or F4) (ReliableOrdered)
     // 125-129: issue #7, party panel (docs/issue7-notas.md)
     PartyStatus = 125, // either way: sender's level u16 | xp progress u8 (/255) | death guards u8, on change at <= 4 Hz + every 2 s (ReliableOrdered)
+    // 130-139: chests, ore and map task markers for every player (docs/baus-notas.md, docs/tarefas-mapa-notas.md)
+    RewardSpawn = 130,    // host -> clients: a chest/ore is up: id u16 | prefab name, address, task address (str) | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
+    RewardDespawn = 131,  // host -> clients: that chest is gone: id u16 | opened u8 (ReliableOrdered, after the opening's LootDrop)
+    RewardStates = 132,   // host -> clients: count u8 | count * (id u16, progress f32, players u8, speed f32), ~10 Hz while in use (Sequenced)
+    RewardPresence = 133, // client -> host: the client's player stands on (1) / left (0) chest id u16 (ReliableOrdered)
+    TaskObjective = 135,    // host -> clients: running map tasks' objectives: count u8 | count * (id u16 | kind u8 | objectiveId str | total f32 | current f32 | flags u8), 2 Hz (ReliableOrdered)
+    TaskTriggerSpawn = 134, // host -> clients: a map task's start marker is up: id u16 (shared with chests) | marker name, task address (str) | difficulty u8 | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
+    // 140-149: partners' skills, what the cast doesn't carry (docs/proximos-investigacao.md)
+    SkillChannelAim = 140, // either way: an open channel's aim: key str | flags u8 (1 front, 2 ground) | [front v3] [ground v3], ~10 Hz (Sequenced)
+    ModelState = 142,      // either way: the sender's active character models (ascension...): count u8 | count * (name str | path str | scale f32) | rootScale f32, on change + every 3 s (ReliableOrdered)
+    PassiveSpawn = 143,    // either way: one of the sender's passive / mini-game objects is up: id u16 | type u8 | name str | pos 3f | yaw f32 | scale f32 [| radius f32, 1.4.1] (ReliableOrdered, resent every 3 s)
+    PassiveDespawn = 144,  // either way: that object is gone: id u16 (ReliableOrdered)
+    PassiveStates = 145,   // either way: count u8 | count * (id u16 | pos 3f | yaw f32), only what moved, ~10 Hz (Sequenced)
+    PassiveParts = 147,    // either way, 1.4.1: parts of one passive object: id u16 | count u8 | count * (path hash u32 | active u8 | localScale 3f), on change 5 Hz + full every 3 s (ReliableOrdered)
+    PassiveMaterials = 148, // either way, 1.5.0: animated shader values of one passive object: id u16 | count u8 | count * (renderer path hash u32 | property name hash u32 | color u8 | f32 or 4 f32), on change 5 Hz + full every 3 s (ReliableOrdered)
+    PassiveAnims = 149,    // either way, 1.6.0: animator states of one passive object: id u16 | count u8 | count * (animator path hash u32 | layer u8 | state full path hash i32 | normalized time f32 | speed f32), on change 5 Hz + full every 3 s (ReliableOrdered)
+    AscensionFx = 146,     // either way: one effect of the sender's ascension / mechanic (VFX, sound, world light), see AscensionFx (ReliableUnordered)
+    SkillAlwaysOn = 141,   // either way: the sender's always-on skills (rotating shields): count u8 | count * (key, type, level, extra, speed, cooldown, scale), on change + every 3 s (ReliableOrdered)
 }
 
 public static class PacketRouter
@@ -69,6 +89,11 @@ public static class PacketRouter
         PacketType.PauseState or PacketType.PartnerHealth or PacketType.XpShare or PacketType.DashState => DeliveryMethod.ReliableOrdered,
         PacketType.PartyStatus => DeliveryMethod.ReliableOrdered, // issue #7: level, XP progress and revives (party panel)
         PacketType.SkillCast or PacketType.SkillChannelEnd => DeliveryMethod.ReliableOrdered, // an end never overtakes its start
+        PacketType.SkillChannelAim => DeliveryMethod.Sequenced, // only the latest aim matters
+        PacketType.SkillAlwaysOn => DeliveryMethod.ReliableOrdered,
+        PacketType.ModelState or PacketType.PassiveSpawn or PacketType.PassiveDespawn or PacketType.PassiveParts or PacketType.PassiveMaterials or PacketType.PassiveAnims => DeliveryMethod.ReliableOrdered,
+        PacketType.PassiveStates => DeliveryMethod.Sequenced,
+        PacketType.AscensionFx => DeliveryMethod.ReliableUnordered,
         PacketType.SummonSpawn or PacketType.SummonDespawn => DeliveryMethod.ReliableOrdered,
         PacketType.SummonStates => DeliveryMethod.Sequenced,
         // Positions go in the host's PlayersState (one packet per tick); damage, ClientState, requests: host only.
@@ -173,6 +198,9 @@ public static class PacketRouter
             case PacketType.ObjectiveSync:
                 Enemies.ObjectiveSync.OnObjectiveSync(reader);
                 break;
+            case PacketType.EnemyAttackAnim:
+                Enemies.EnemyAttackAnims.OnPacket(reader);
+                break;
             case PacketType.GodCast:
                 Enemies.GodCasts.OnGodCast(reader);
                 break;
@@ -197,6 +225,39 @@ public static class PacketRouter
             case PacketType.SkillChannelEnd:
                 Skills.CastSync.OnSkillChannelEnd(reader);
                 break;
+            case PacketType.SkillChannelAim:
+                Skills.CastSync.OnSkillChannelAim(reader);
+                break;
+            case PacketType.SkillAlwaysOn:
+                Skills.AlwaysOnSync.OnPacket(reader);
+                break;
+            case PacketType.ModelState:
+                AscensionSync.OnPacket(reader);
+                break;
+            case PacketType.AscensionFx:
+                AscensionFx.OnPacket(reader);
+                break;
+            case PacketType.PassiveSpawn:
+                Summons.PassiveObjectSync.OnSpawn(reader);
+                break;
+            case PacketType.PassiveDespawn:
+                Summons.PassiveObjectSync.OnDespawn(reader);
+                break;
+            case PacketType.PassiveStates:
+                Summons.PassiveObjectSync.OnStates(reader);
+                break;
+            case PacketType.PassiveParts:
+                Summons.PassiveObjectSync.OnParts(reader);
+                break;
+            case PacketType.PassiveMaterials:
+                Summons.PassiveObjectSync.OnMaterials(reader);
+                break;
+            case PacketType.PassiveAnims:
+                Summons.PassiveObjectSync.OnAnims(reader);
+                break;
+            case PacketType.TaskObjective:
+                Loot.TaskObjectiveSync.OnPacket(reader);
+                break;
             case PacketType.LootDrop:
                 Loot.LootSync.OnLootDrop(reader);
                 break;
@@ -214,6 +275,9 @@ public static class PacketRouter
                 break;
             case PacketType.RunStartRefused:
                 Lobby.RunSync.OnRunStartRefused(reader);
+                break;
+            case PacketType.RunJoinRequest:
+                Lobby.RunSync.OnJoinRequest(From);
                 break;
             case PacketType.PortalTransition:
                 Lobby.PortalSync.OnPortalTransition(reader);
@@ -238,6 +302,21 @@ public static class PacketRouter
                 break;
             case PacketType.PartyStatus:
                 Life.PartyStatus.OnPacket(reader);
+                break;
+            case PacketType.RewardSpawn:
+                Loot.ChestSync.OnSpawn(reader);
+                break;
+            case PacketType.RewardDespawn:
+                Loot.ChestSync.OnDespawn(reader);
+                break;
+            case PacketType.RewardStates:
+                Loot.ChestSync.OnStates(reader);
+                break;
+            case PacketType.RewardPresence:
+                Loot.ChestSync.OnPresence(reader);
+                break;
+            case PacketType.TaskTriggerSpawn:
+                Loot.ChestSync.OnTaskSpawn(reader);
                 break;
             case PacketType.PauseState:
                 PauseSync.OnPauseStateReceived(reader);

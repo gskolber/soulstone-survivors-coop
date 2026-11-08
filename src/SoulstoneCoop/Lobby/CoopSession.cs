@@ -112,6 +112,21 @@ public static class CoopSession
         LocalInRun ? (StageTransition ? LobbyPlace.Transition : LobbyPlace.InRun)
         : LocalLoading ? LobbyPlace.Loading : LobbyPlace.Menu;
 
+    /// <summary>1.6.1: some other player that started changing scene before our match started (it loads the same run
+    /// with us: start, portal, restart) is still on its way. A player who starts loading after our match is up (a
+    /// rejoin, a late join) doesn't count: the run must not freeze for it (the host held 40 s for a Fight rejoin).</summary>
+    public static bool AnyRemoteLoadingWithUs
+    {
+        get
+        {
+            if (!Connected) return false;
+            float start = LocalRunStartTime;
+            foreach (var r in RemoteList)
+                if (r.ChangingScene && (r.ChangingSince < 0f || r.ChangingSince <= start + 1f)) return true;
+            return false;
+        }
+    }
+
     /// <summary>Some other player is on its way to the next scene (still in the old one, or loading).</summary>
     public static bool AnyRemoteChangingScene
     {
@@ -353,6 +368,7 @@ public static class CoopSession
         }
 
         RunSync.HostRejoinTick(); // phase 8, AllowRejoin only
+        RunSync.ClientRunTick();  // 1.6.0: a RunStart held until the menu has settled
     }
 
     private static void SendPlace(bool force)
@@ -440,13 +456,19 @@ public static class CoopSession
         p.Place = place;
         if (prev == place) return;
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][session] Slot {p.Slot} ({p.Name}): {prev} -> {place} (local {LocalPlace}).");
+        if ((place == LobbyPlace.Loading || place == LobbyPlace.Transition) && !(prev == LobbyPlace.Loading || prev == LobbyPlace.Transition))
+            p.ChangingSince = Time.unscaledTime;
 
         // That player's match just started next to ours: resend every live enemy to it (this used to happen on
         // PeerConnected, when the connection was made inside the run). Duplicates are ignored by the client.
         // Not while our own old scene is still up (portal taken): those enemies are about to be gone.
         if (place == LobbyPlace.InRun) RunSync.NoteInRun(p.Slot);
+        if (prev == LobbyPlace.InRun && place == LobbyPlace.Menu) RunSync.NoteLeftRun(p.Slot); // 1.6.0: no auto pull-back
         if (place == LobbyPlace.InRun && LocalInRun && !StageTransition && NetworkManager.Role == NetRole.Host)
+        {
             Enemies.HostEnemySync.ResyncToPeer(p.Slot, "player entered the run");
+            Loot.ChestSync.ResyncToPeer(p.Slot); // and the chests / ore still up
+        }
 
         // Client: the host's old scene is gone. Everything it sent from that scene came before this packet (same
         // ordered channel), so spawns/loot still around are stale (portal or Restart inside the run).
