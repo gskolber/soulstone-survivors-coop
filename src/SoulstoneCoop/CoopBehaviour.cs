@@ -165,7 +165,6 @@ public class CoopBehaviour : MonoBehaviour
             Summons.PassiveObjectSync.Tick(Time.unscaledDeltaTime);
             Summons.PowersProbe.Tick(Time.unscaledDeltaTime); // 1.4.1 diagnostic, log only
             Loot.TaskObjectiveSync.Tick(Time.unscaledDeltaTime);
-            Lobby.RejoinProgress.Tick(Time.unscaledDeltaTime);
             Enemies.HostHazards.Tick(Time.unscaledDeltaTime);
             Loot.LootSync.Tick(Time.unscaledDeltaTime);
             Loot.ChestSync.Tick(Time.unscaledDeltaTime);

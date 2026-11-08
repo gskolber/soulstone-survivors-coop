@@ -27,7 +27,7 @@ public static class RunSync
         public int MasteryLevel;
         public bool HasAffixes;              // Survivors: override the client's affixes with List
         public List<string> Affixes = new();
-        public int RunId;                    // 1.4: which run (new on Fight/Restart, kept across stages): RejoinProgress
+        public int RunId;                    // 1.4: which run (new on Fight/Restart, kept across stages)
         public bool Rejoin;                  // 1.4: the host's AllowRejoin (guests keep their build for a comeback)
     }
 
@@ -157,7 +157,7 @@ public static class RunSync
 
     /// <summary>1.6.0, host: a client in the menu asked to join our run (RunJoinRequest). With AllowRejoin, forget
     /// that we already sent it the run (it surrendered and came back): HostRejoinTick sends it again, and the client
-    /// keeps its build if it's the same run (RejoinProgress). Without, tell the host how to allow it.</summary>
+    /// comes back as a new character (the build snapshot is gone since 1.6.1). Without, tell the host how to allow it.</summary>
     internal static void OnJoinRequest(byte slot)
     {
         if (NetworkManager.Role != NetRole.Host) return;
@@ -341,7 +341,6 @@ public static class RunSync
         if (missing != null) return missing;
 
         PrepareClientRun(p);
-        RejoinProgress.BeforeClientRunLoad(p.RunId, p.Rejoin, p.HasAffixes ? p.Affixes : null); // our build back, same run only
         Enemies.ClientPuppets.ResetForNewRun();
         PauseSync.ResetForRun();
         CoopSession.BeginLoading();
@@ -365,8 +364,6 @@ public static class RunSync
         Global.MasteryDifficultyTier = p.MasteryTier;
         Global.MasteryDynamicLevel = p.MasteryLevel;
         _clientRun = p;
-        RejoinProgress.CurrentRunId = p.RunId;
-        RejoinProgress.HostAllowsRejoin = p.Rejoin;
         _hostProgression = null;
         if (p.HasAffixes) _affixOverrides = 0;
     }

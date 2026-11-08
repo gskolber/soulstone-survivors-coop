@@ -8,7 +8,8 @@ namespace SoulstoneCoop.Skills;
 /// 1.6.0 diagnostic: which reference fields of a game object are null, by their real offset (il2cpp_field_get_offset of
 /// the interop's NativeFieldInfoPtr_ fields). Made for the Machinist's crystals: TemporaryRotatingSkill.DoActivate
 /// (0x56A5B0) throws on a null at one of +0x90, +0xE0, +0x130, +0x258, +0x260, +0x268, +0x288 on our replica only;
-/// logging the copy and the owner's own instance side by side names the field that's missing.
+/// logging the copy and the owner's own instance side by side names the field that's missing. Raw pointer reads: only
+/// with [Debug] PowersProbe (the log-only diagnostic switch), off by default.
 /// </summary>
 internal static unsafe class FieldDump
 {
@@ -16,6 +17,7 @@ internal static unsafe class FieldDump
 
     internal static void Log(Il2CppSystem.Object obj, string label, params int[] offsets)
     {
+        if (Plugin.PowersProbe == null || !Plugin.PowersProbe.Value) return;
         if (obj == null || !Logged.Add(label)) return;
         try
         {

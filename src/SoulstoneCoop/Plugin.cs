@@ -60,7 +60,7 @@ public class Plugin : BasePlugin
         SenderClock = Config.Bind("Coop", "SenderClock", false,
             "Experimental: place the partner and the enemies by the sender's clock instead of the arrival time (smoother with jitter).");
         PowersProbe = Config.Bind("Debug", "PowersProbe", false,
-            "Diagnostic, log only: what your own hero spawns from the game's powers/ folder (mini-game objects), whether it comes from the pool, its parts and its material changes. Sends nothing.");
+            "Diagnostic, log only: what your own hero spawns from the game's powers/ folder (mini-game objects), whether it comes from the pool, its parts and its material changes; and the field layout of rotating skills (FieldDump). Sends nothing.");
         TestKeys = Config.Bind("Debug", "TestKeys", false, // 1.6.2: they used to be always on
             "Test keys for the mod's developers (F1-F3, F5-F11, Insert, Delete, PageDown: drop the connection, levels, chests, portals, " +
             "victory, revive, lethal hit...). Off = those keys do nothing. F4 (host lifts the others' pause) and Tab (hide the level-up " +

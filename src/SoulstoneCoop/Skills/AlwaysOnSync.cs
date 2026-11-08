@@ -107,18 +107,32 @@ public static class AlwaysOnSync
         _sent++;
     }
 
+    // Receiver bounds: the packet is relayed from any peer, so what it asks the copies to do is clamped to what a real
+    // RotatingShieldSkill gives (a handful per character, a few extra projectiles, a rotation in degrees/s).
+    private const int MaxEntries = 16;
+    private const int MaxKeyLength = 128;
+    private const int MaxExtra = 20;
+    private const float MaxSpeed = 3600f;
+    private const float MinCooldown = 0.05f, MaxCooldown = 30f;
+    private const float MaxScale = 10f;
+
     public static void OnPacket(NetDataReader r)
     {
         int n = r.GetByte();
-        var list = new List<(string Key, RemoteCaster.AlwaysOnSpec Spec)>(n);
-        for (int i = 0; i < n; i++)
+        var list = new List<(string Key, RemoteCaster.AlwaysOnSpec Spec)>(Math.Min(n, MaxEntries));
+        for (int i = 0; i < n && list.Count < MaxEntries; i++)
         {
             string key = r.GetString();
             int type = r.GetInt();
             byte level = r.GetByte();
             int extra = r.GetShort();
             float speed = r.GetFloat(), cooldown = r.GetFloat(), scale = r.GetFloat();
-            list.Add((key, new RemoteCaster.AlwaysOnSpec(type, level, extra, speed, cooldown, scale)));
+            if (string.IsNullOrEmpty(key) || key.Length > MaxKeyLength || !float.IsFinite(speed)) continue;
+            // Cooldown / scale <= 0 mean "leave the copy's own" (RemoteCaster.UpdateAlwaysOn, ApplyFidelity).
+            cooldown = float.IsFinite(cooldown) && cooldown > 0f ? Mathf.Clamp(cooldown, MinCooldown, MaxCooldown) : 0f;
+            scale = float.IsFinite(scale) && scale > 0f ? Mathf.Min(scale, MaxScale) : 0f;
+            list.Add((key, new RemoteCaster.AlwaysOnSpec(type, level, Mathf.Clamp(extra, 0, MaxExtra),
+                Mathf.Clamp(speed, -MaxSpeed, MaxSpeed), cooldown, scale)));
         }
         _recv++;
         RemoteCaster.SetAlwaysOn(PacketRouter.From, list);
