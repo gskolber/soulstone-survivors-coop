@@ -70,6 +70,8 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
 | Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
 | Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
+| **1.8.0** | Modo Mastery: chefe principal do host no convidado, runa do host (convidado na runa enche a do host), kills e ciclos, vitória e portal Home (`MasteryState = 150`, `MasteryRunePresence = 151`); fases do chefe (introdução, arena, morte) tocadas no convidado (`MasteryBossPhase = 152`); F7/F8 no Mastery (`mastery-notas.md`) | — |
+| **1.7.0** | Merge do PR #9 no upstream; reconexão numa run/estágio velho, convidado que cai ainda conta como vivo/caído por 45 s, pacotes repassados com limites (`reentrada-notas.md`) | `757b942` |
 | **1.6.2** | Teclas de teste (F1-F3, F5-F11, Insert, Delete, PageDown) só com `[Debug] TestKeys` ou `--coop-test-keys` (o `tools/test-local` passa); antes valiam em toda sessão co-op, e Insert/Delete/PageDown até no solo | — |
 | **1.6.1** | Correções do teste da 1.6.0 (`fb7d33f`) | — |
 | Esquiva | Esquiva por dash para convidados: o proxy no host dá dash junto (`pendencias-notas.md`) | — |
@@ -89,9 +91,18 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 
 ## Agora
 
-A **1.6.1** está no `master` (`fb7d33f`), testada em um PC (dois jogos); a 1.6.2 (teclas de teste atrás de opção) está em teste; a 1.5.0 também foi jogada com um amigo pela Steam. As novidades da 1.6 e 3+ jogadores ainda não foram jogados pela rede.
+A **1.7.0** é a versão publicada (upstream `gskolber`, com o PR #9). A **1.8.0** (modo Mastery, `mastery-notas.md`) está no fork, testada em um PC (duas janelas, nove testes até a run completa) e indo como PR para o upstream.
 
-Revisão de 07/11/2026: cada item abaixo foi conferido no código da `fb7d33f`.
+### Modos de jogo em co-op
+
+| Modo | Estado |
+|---|---|
+| Survivors | Funciona; o mais jogado |
+| Endless (portal roxo) | Funciona: o host sorteia o mapa e todos vão (`portais-notas.md`); testado num PC |
+| BossRush (portal vermelho, `SurvivorsBossRoomGameManager`) | Espelhado (chefes, vitória, portais); só testado forçando com F10 + Shift+F5 num PC |
+| Reiniciar | Funciona para todos |
+| Mastery (`MasteryGameManager`) | 1.8.0: chefe principal (introdução, arena, morte), runa, ciclos, pilares, vitória e portal sincronizados; testado num PC. Falta: efeito de canalizar o chefe do parceiro na arena |
+| Crusade (lobby, caverna dos goblins) | Bloqueada no Lutar (`nt.crusade`) |
 
 ## Próximos itens
 
@@ -99,10 +110,11 @@ Em ordem de prioridade.
 
 | # | Item | O que o código mostra | Esforço |
 |---|---|---|---|
-| 1 | Reconexão quando o host trocou de estágio, reiniciou ou voltou ao menu durante a queda | O `LobbyState` leva só o lugar (um byte) e o `RunId` não muda entre estágios. Na volta, o convidado fica na cena velha; o host o vê `InRun` e o `ResyncToPeer` manda os inimigos e baús do estágio novo para o mapa velho. Com o host no menu, o convidado fica sozinho numa run parada. Caminho: na reconexão o host manda um token do estágio (run + contador de estágio ou cena); diferente do do convidado → ele recarrega pelo `RunStart` atual (como o Lutar); host no menu → o convidado sai da run com aviso | médio |
-| 2 | Desistir e voltar com Lutar mantém a build | Desligada na 1.6.1 (e o `RejoinProgress` removido depois do PR #9): a foto usava `GameModeBaseData.SetDataBasedOnPlayerEntity` (0x4FF600), que é a passagem de estágio do jogo (grava o perfil, troca o `InventoryData` do jogador). Precisa de uma foto própria, só de leitura (nível, upgrades, runas, itens), e de reaplicar sem o caminho de estágio (`reentrada-notas.md`) | médio |
-| 3 | Power-ups "ao esquivar" do convidado | Desde a 1.6.1 a esquiva acontece no proxy do convidado, no host; o `PassiveSkillsComponent` do convidado (`HasSkillOnDashDodge`, `SkillOnDashDodgePowerUpSO`) nunca fica sabendo. Caminho: o host avisa quando um hit no proxy sai com `IsDashDodged`, e o convidado dispara o próprio efeito (`pendencias-notas.md`, "1.6.1") | pequeno a médio |
-| 4 | Modo Crusade | Começa num lobby e troca de mapa no meio; portas e baús já têm base (`fase6-notas.md`, `portais-notas.md`, `proximos-investigacao.md` §6) | grande |
+| 1 | Mastery pela Steam e o efeito de canalizar o chefe na arena (cada um só vê o próprio) | Roteiro em `mastery-notas.md`; falta saber de onde vem o efeito de canalizar | pequeno a médio |
+| 2 | BossRush e Endless chegando de verdade (sem F10/F5), pela Steam | Só testados forçados num PC | pequeno (teste) |
+| 3 | Desistir e voltar com Lutar (ou voltar depois de o host trocar de estágio) mantém a build | Desligada na 1.6.1 (e o `RejoinProgress` removido depois do PR #9): a foto usava `GameModeBaseData.SetDataBasedOnPlayerEntity` (0x4FF600), que é a passagem de estágio do jogo (grava o perfil, troca o `InventoryData` do jogador). Precisa de uma foto própria, só de leitura (nível, upgrades, runas, itens), e de reaplicar sem o caminho de estágio (`reentrada-notas.md`) | médio |
+| 4 | Power-ups "ao esquivar" do convidado | Desde a 1.6.1 a esquiva acontece no proxy do convidado, no host; o `PassiveSkillsComponent` do convidado (`HasSkillOnDashDodge`, `SkillOnDashDodgePowerUpSO`) nunca fica sabendo. Caminho: o host avisa quando um hit no proxy sai com `IsDashDodged`, e o convidado dispara o próprio efeito (`pendencias-notas.md`, "1.6.1") | pequeno a médio |
+| 5 | Modo Crusade | Começa num lobby e troca de mapa no meio; portas e baús já têm base (`fase6-notas.md`, `portais-notas.md`, `proximos-investigacao.md` §6) | grande |
 
 **Problema conhecido, parado por decisão:** cristais giratórios do Machinist no parceiro. NRE mais adiante no `DoActivate` da réplica, depois do pool da projectile skill; o `FieldDump` mostrou os campos checados no começo todos preenchidos (`sempre-ligadas-notas.md`).
 

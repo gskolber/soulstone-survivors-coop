@@ -162,7 +162,14 @@ public static class PortalSync
         var sgm = GameManagerUtil.GameData?.SurvivorsGameManager;
         if (sgm != null) { sgm.OnPlayerEnterPortal(); return true; }
         var room = BossRoom();
-        if (room == null) return false;
+        if (room == null)
+        {
+            // 1.8.0: the Mastery map's own Home portal.
+            var mm = Modes.MasterySync.Manager;
+            if (mm == null) return false;
+            mm.OnPlayerEnterPortal();
+            return true;
+        }
         room.OnPlayerEnterPortal();
         return true;
     }

@@ -176,6 +176,7 @@ public class CoopBehaviour : MonoBehaviour
             Enemies.EnemyAttackAnims.Tick(Time.unscaledDeltaTime);
             Enemies.SpecialsDebug.Tick(Time.unscaledDeltaTime);
             Enemies.ObjectiveSync.Tick(Time.unscaledDeltaTime);
+            Modes.MasterySync.Tick(Time.unscaledDeltaTime); // 1.8.0: Mastery mode
             Enemies.EnemyScaling.Tick(Time.unscaledDeltaTime);
             RebuildGhostIfModelInactive();
             HandleDebugHotkeys();
