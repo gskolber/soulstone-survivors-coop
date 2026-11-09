@@ -148,8 +148,9 @@ public static class ClientMasterySpawnBossesPatch
     }
 }
 
-// Only caller in the game is MasteryGameManager.<SpawnMainBossRoutine>; returning null there can
-// break that coroutine, which only affects Mastery mode on the client.
+// Only caller in the game is MasteryGameManager.<SpawnMainBossRoutine>; returning null there broke that coroutine
+// (no main boss objective, no pillars). 1.8.0: in Mastery the guest waits for the host's main boss and gets its
+// puppet here (Modes.MasterySync); anything else still gets null.
 [HarmonyPatch(typeof(BossSpawnProcessor), nameof(BossSpawnProcessor.SpawnSpecificBoss))]
 public static class ClientSpawnSpecificBossPatch
 {
@@ -159,6 +160,12 @@ public static class ClientSpawnSpecificBossPatch
         try
         {
             if (!CoopRole.IsClientSide) return true;
+            if (Modes.MasterySync.TakeMainBossOverride(out var puppet) && puppet != null)
+            {
+                Plugin.StaticLog.LogInfo($"[SoulstoneCoop][spawn] Client: SpawnSpecificBoss({bossName}) -> the host's main boss puppet.");
+                __result = puppet;
+                return false;
+            }
             Plugin.StaticLog.LogWarning($"[SoulstoneCoop][spawn] Client: blocked BossSpawnProcessor.SpawnSpecificBoss({bossName}), returning null.");
             __result = null!;
             return false;

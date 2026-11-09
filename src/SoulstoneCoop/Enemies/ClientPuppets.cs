@@ -369,6 +369,9 @@ public static class ClientPuppets
 
     private static void DriveMovement(Puppet p, float now)
     {
+        // 1.8.0: the Mastery main boss is left where its own phase transition puts it while that runs here
+        // (Modes.MasterySync.HoldBossPuppet; 8th test: the arena teleport is measured from the boss's position).
+        if (Modes.MasterySync.HoldBossPuppet(p.Entity)) return;
         var tr = p.Entity.transform;
         Vector3 actual = tr.position;
 
@@ -862,6 +865,17 @@ public static class ClientPuppets
         var e = p.Entity;
         var health = e != null ? e._health : null;
         if (health == null) { RemoveTracking(p); return; }
+        // 1.8.0: the Mastery main boss dies the game's way like on the host (it stays for its death cutscene there:
+        // greyed out, its boss bar gone), never recycled by us: the host's FinalPhase, replayed here by
+        // Modes.MasterySync, runs on it. 6th test: its health thresholds clamped the network death, it was recycled,
+        // the cutscene stopped halfway and the guest stayed frozen. 9th test (kept alive instead): no grey "dead" look
+        // and its boss bar stayed up. Now: thresholds cleared, then the normal death.
+        bool masteryBoss = Modes.MasterySync.KeepForCutscene(e!);
+        if (masteryBoss)
+        {
+            try { health.HealthThresholds?.Clear(); } catch { /* best effort */ }
+            health.IgnoreDeathState = false;
+        }
         try
         {
             if (HasLocalAttacker(health)) _killCredits++;
@@ -878,6 +892,17 @@ public static class ClientPuppets
             ApplyingNetworkDeath = false;
         }
         ReleaseBoss(p);
+
+        if (masteryBoss)
+        {
+            if (!health.HasBeenKilled)
+            {
+                try { GameManagerUtil.DeregisterBossEntity(e!); } catch { /* best effort: the boss bar */ }
+                Plugin.StaticLog.LogWarning($"[SoulstoneCoop][puppets] #{p.NetId} (Mastery main boss) survived the network death: kept for its death cutscene, boss bar dropped.");
+            }
+            else Plugin.StaticLog.LogInfo($"[SoulstoneCoop][puppets] #{p.NetId} (Mastery main boss) died here too; kept for its death cutscene.");
+            return;
+        }
 
         if (!health.HasBeenKilled)
         {

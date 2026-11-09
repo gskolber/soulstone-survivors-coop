@@ -382,6 +382,8 @@ public static class CastSync
                 if (e != null && ClientSpawnBlock.IsEnemyTeam(e) && (e.transform.position - at).sqrMagnitude < 15f * 15f) near++;
             }
         if (near == 0) return; // nothing to hit: not casting is normal
+        // 1.8.0: a Mastery boss cutscene stops everyone's casting on purpose (SetCombatStateAction).
+        if (Modes.MasterySync.BossCutsceneRunning) return;
         _stallReportAt = Time.unscaledTime + StallReportInterval;
         _stalls++;
 
