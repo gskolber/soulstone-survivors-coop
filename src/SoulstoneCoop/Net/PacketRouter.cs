@@ -59,6 +59,9 @@ public enum PacketType : byte
     RewardDespawn = 131,  // host -> clients: that chest is gone: id u16 | opened u8 (ReliableOrdered, after the opening's LootDrop)
     RewardStates = 132,   // host -> clients: count u8 | count * (id u16, progress f32, players u8, speed f32), ~10 Hz while in use (Sequenced)
     RewardPresence = 133, // client -> host: the client's player stands on (1) / left (0) chest id u16 (ReliableOrdered)
+    MasteryBossPhase = 152, // host -> clients, 1.8.0: the main boss started a phase transition (intro, portal...): kind u8 (0 initial, 1 intermediate, 2 final) | index u8 (ReliableOrdered)
+    MasteryRunePresence = 151, // guest -> host, 1.8.0: our player is on (1) / off (0) the Mastery rune, on change + every 1 s while on (ReliableOrdered)
+    MasteryState = 150,   // host -> clients, 1.8.0: Mastery match: cycle i32 | cycles i32 | rune triggers i32 | main boss net id u16 | kills 3 x i32, on change + every 2 s (ReliableOrdered)
     TaskObjective = 135,    // host -> clients: running map tasks' objectives: count u8 | count * (id u16 | kind u8 | objectiveId str | total f32 | current f32 | flags u8), 2 Hz (ReliableOrdered)
     TaskTriggerSpawn = 134, // host -> clients: a map task's start marker is up: id u16 (shared with chests) | marker name, task address (str) | difficulty u8 | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
     // 140-149: partners' skills, what the cast doesn't carry (docs/proximos-investigacao.md)
@@ -269,6 +272,15 @@ public static class PacketRouter
                 break;
             case PacketType.TaskObjective:
                 Loot.TaskObjectiveSync.OnPacket(reader);
+                break;
+            case PacketType.MasteryState:
+                Modes.MasterySync.OnState(reader);
+                break;
+            case PacketType.MasteryBossPhase:
+                Modes.MasterySync.OnBossPhase(reader);
+                break;
+            case PacketType.MasteryRunePresence:
+                Modes.MasterySync.OnRunePresence(reader);
                 break;
             case PacketType.LootDrop:
                 Loot.LootSync.OnLootDrop(reader);
