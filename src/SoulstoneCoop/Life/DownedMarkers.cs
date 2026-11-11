@@ -54,7 +54,7 @@ public static class DownedMarkers
     public static void Tick(bool active)
     {
         if (_failed) return;
-        try { TickCore(active); }
+        try { TickCore(active && !Ui.Cutscene.Running); } // 1.9.0: hidden during boss cutscenes
         catch (Exception ex)
         {
             _failed = true;

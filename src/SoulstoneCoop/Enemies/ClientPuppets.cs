@@ -657,6 +657,7 @@ public static class ClientPuppets
 
             inst.Setup();
             DisableAI(inst);
+            MarkAnimatorsWithoutCharacter(inst);
             if (!fromTierLists) MatchHostMaxHealth(inst, msg);
 
             var p = new Puppet
@@ -797,6 +798,23 @@ public static class ClientPuppets
             _bossErrors++;
             Plugin.StaticLog.LogWarning($"[SoulstoneCoop][puppets] Boss setup after Setup (#{p.NetId} '{p.Key}'): {ex.Message}");
         }
+    }
+
+    /// <summary>1.9.0: a fresh puppet without an ECM2 Character (the void tentacles of the Crusade tasks) still has a
+    /// CharacterAnimator; CharacterAnimator.UpdateAll ran before its Start had set _isCharacterNull and threw a
+    /// NullReferenceException (once per puppet, every other animator skipped that frame). Set it now.</summary>
+    private static void MarkAnimatorsWithoutCharacter(Entity inst)
+    {
+        try
+        {
+            var all = inst.GetComponentsInChildren(Il2CppInterop.Runtime.Il2CppType.Of<ECM2.Examples.Animation.UnityCharacterAnimatorExample.CharacterAnimator>(), true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var a = all[i]?.TryCast<ECM2.Examples.Animation.UnityCharacterAnimatorExample.CharacterAnimator>();
+                if (a != null && a._character == null) a._isCharacterNull = true;
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][puppets] Character animators of '{inst.gameObject.name}': {ex.Message}"); }
     }
 
     /// <summary>Take the boss bar down (GameManagerUtil.DeregisterBossEntity), once, on death, despawn or recycle.</summary>

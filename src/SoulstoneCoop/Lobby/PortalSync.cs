@@ -166,8 +166,11 @@ public static class PortalSync
         {
             // 1.8.0: the Mastery map's own Home portal.
             var mm = Modes.MasterySync.Manager;
-            if (mm == null) return false;
-            mm.OnPlayerEnterPortal();
+            if (mm != null) { mm.OnPlayerEnterPortal(); return true; }
+            // 1.9.0: a Crusade map's Home portal.
+            var cm = Modes.CrusadeSync.MapManager;
+            if (cm == null) return false;
+            cm.OnPlayerEnterHomePortal();
             return true;
         }
         room.OnPlayerEnterPortal();
@@ -424,6 +427,7 @@ public static class PortalSync
         Enemies.ObjectiveSync.ResetForNewScene();
         Summons.SummonSync.OnLocalSceneGone();
         Loot.ChestSync.OnLocalSceneGone();
+        Modes.CrusadeSync.OnLocalSceneGone();
     }
 }
 

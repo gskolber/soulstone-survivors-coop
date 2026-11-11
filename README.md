@@ -54,7 +54,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 | Map tasks | The objective markers on the map appear for everyone, and any player can start them (faster with more players on the marker); everyone sees the task's timer or kill counter; the enemies and the reward are shared |
 | Pause | Anyone's pause freezes everyone and the host can unpause for all; level-ups open as a compact see-through panel at the top of the screen that you keep playing under (1-4 or the gamepad's D-pad to pick) |
 | Death | Downed state, any ally standing next to you revives you: a ring on the ground shows the revive area and fills as you're revived, and a line ties each downed player to the nearest living ally (stepping away to dodge only slowly drains the revive bar); XP you pick up while down is added when you get up (revived, victory or portal); defeat only when everyone is down; with the host down, enemies keep coming to the players still standing; the God's meteors go after every living player, not only the host; a party panel shows every partner's health, level, XP, revives left and whether they are down or dead |
-| Game modes | Survivors, with its Endless and challenge (Boss Rush) portals; Mastery since 1.8.0 (the main boss with its intro, arena and death cutscenes, the rune, cycles, pillars, the victory and the Home portal follow the host; tested on one PC). Crusade is not supported |
+| Game modes | Survivors, with its Endless and challenge (Boss Rush) portals; Mastery since 1.8.0 (the main boss with its intro, arena and death cutscenes, the rune, cycles, pillars, the victory and the Home portal follow the host; tested on one PC); Crusade since 1.9.0, in part: the lobby, the map changes (the host picks the next map, everyone goes), map tasks and the boss room |
 | End of run | Victory, Home portal, Endless and challenge portals and Restart happen for everyone; the host surrendering ends the run for all |
 | Disconnects | A dropped connection reconnects by itself for 45 s and the run goes on (no reload); the host leaving ends everyone's run with a notice; a guest leaving (or surrendering) lets the others continue |
 | Language | The mod's own texts follow the game's language: English and Portuguese written by hand; Spanish, French, German, Russian, Chinese and Japanese machine-translated |
@@ -65,7 +65,7 @@ Direct IP is also available (**Host by IP** / type the host's IP → **Join**, U
 - If the host went through a portal, restarted or went back to the menu while you were disconnected, your old match ends a few seconds after you reconnect and you're brought into the host's current run as a new character.
 - A guest's "on dash dodge" upgrades don't trigger (the dodge itself works since 1.6.1).
 - Mastery (1.8.0) has only been played on one PC so far. The rune goes off on the host's side, a moment after it fills on a guest's screen. In the main boss's arena, each player only sees their own channeling effect on the boss.
-- Crusade mode is not supported in co-op.
+- Crusade (1.9.0): the lobby, map changes, map tasks and the boss room (objectives, door, presentation, bosses) are shared; after the map's boss dies, the titan blood and exit portals are still the host's, and the goblin cave's chests and the final boss aren't shared yet. Restart isn't followed in Crusade.
 - A partner's mod skin only shows if you have the same mod installed; otherwise you see their character's default skin.
 - Another character's ascension effects need that character's assets in your game; when they aren't loaded, those effects are skipped. The Machinist's rotating crystals don't show on partners yet.
 
@@ -78,7 +78,7 @@ Next, in order (details in [`docs/roadmap.md`](docs/roadmap.md)):
 1. Mastery over Steam with a friend, and the partners' channeling effect in the boss arena.
 2. Keeping your build when you come back with Fight, or after the host changed stage while you were away.
 3. Guests' "on dash dodge" upgrades.
-4. Crusade mode.
+4. Crusade mode: the maps themselves (fragments, door, bosses, titan blood), the goblin cave and the final boss.
 
 ## Settings
 
@@ -96,6 +96,7 @@ Next, in order (details in [`docs/roadmap.md`](docs/roadmap.md)):
 | `[Coop] MaxPlayers` | `8` | Lobby size (2-8) |
 | `[Coop] EnemyScalePerPlayer` | `0` | Extra enemies per additional player (try `0.25`) |
 | `[Coop] ReplicaCastRadius` | `60` | Don't draw skills of partners farther than this (also how far from a guest regular enemies' attack animations are sent) |
+| `[Coop] TaskAreaEmptySeconds` | `5` | Host, Crusade map tasks: seconds a running task's area may stay empty (the count pauses while anyone is back in, and isn't refilled) before the task goes back to its marker and its enemies are removed |
 | `[Coop] ChestOpenBonusPerPlayer` | `0.5` | Host: extra opening speed for chests and ore per extra player standing on them (2 players x1.5, 3 x2, at most x3); `0` = same speed as alone |
 | `[Coop] LobbyType` | `FriendsOnly` | `Public` if friends of guests can't join |
 | `[Coop] Language` | `Auto` | Language of the mod's texts: `Auto` follows the game; or `en`, `pt-BR`, `es`, `fr`, `de`, `ru`, `zh`, `ja` |
@@ -118,8 +119,8 @@ Used to test the mod; off unless `[Debug] TestKeys` is `true` (or the game is st
 | F3 | host | Spawns a chest or ore next to you |
 | F5 / Shift+F5 | host | Takes the Endless / Boss Rush portal |
 | F6 / Shift+F6 | anyone, in a run | +1 / +5 levels for you (not shared) |
-| F7 | host | Spawns a void presence, void hunters, a mineral and a pillar; in Mastery: jumps to the main boss fight (kills every other enemy, stops spawning, last cycle, the main boss wakes up), then a few seconds into the fight starts its second part (portal) |
-| F8 | host | Completes the kill objective, so the boss comes; in Mastery: ends the run with the victory (skips the rest of the boss fight) |
+| F7 | host | Spawns a void presence, void hunters, a mineral and a pillar; in Mastery: jumps to the main boss fight (kills every other enemy, stops spawning, last cycle, the main boss wakes up), then a few seconds into the fight starts its second part (portal); in Crusade: opens the map selection (lobby, map or goblin cave) |
+| F8 | host | Completes the kill objective, so the boss comes; in Mastery: ends the run with the victory (skips the rest of the boss fight); in Crusade, on a map: gives the host the map's key fragments and takes everyone to the boss room door (stand on it to open it) |
 | F9 | anyone, in a run | Lethal hit on yourself |
 | F10 | host | Victory |
 | F11 | host | Revives everyone |

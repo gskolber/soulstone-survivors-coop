@@ -151,6 +151,81 @@ public static class ChestSync
     private static readonly Dictionary<IntPtr, Chest> Tracked = new();          // by reward object / MapTask (Chest.Key)
     private static readonly Dictionary<IntPtr, Chest> TrackedByTrigger = new(); // by its InteractableOneTimeTrigger
     private static readonly Dictionary<IntPtr, MapTask> KnownTasks = new();     // every enabled MapTask (host)
+    private static readonly Dictionary<string, string> SpawnedTaskAddresses = new(); // 1.9.0: task prefab name -> address (cache)
+    private static readonly Dictionary<IntPtr, (Vector3 pos, Quaternion rot)> TaskPoses = new(); // 1.9.0: where each task's marker stood
+
+    /// <summary>1.9.0: where this task's marker stood (Modes.CrusadeSync puts it back there when the task resets).</summary>
+    internal static bool TryGetTaskPose(MapTask task, out Vector3 pos, out Quaternion rot)
+    {
+        pos = default; rot = Quaternion.identity;
+        if (task == null || !TaskPoses.TryGetValue(task.Pointer, out var p)) return false;
+        pos = p.pos; rot = p.rot;
+        return true;
+    }
+
+    /// <summary>The address the guest loads this task from: its metadata's, or the one the spawner loaded it with.</summary>
+    internal static string AddressOf(MapTask? task)
+    {
+        if (task == null) return "";
+        string a = "";
+        try { a = task.TaskMetadata?.TaskAddress ?? ""; } catch { }
+        if (a.Length > 0) return a;
+        string name = "";
+        try
+        {
+            // The spawner's own record of the task (MapTaskInstance): its metadata comes from the task collection, with
+            // the address the task was loaded from. The prefab's TaskMetadata (Crusade maps) has none.
+            name = Enemies.EnemyPrefabKeys.StripClone(task.gameObject.name);
+            var comps = GameManagerUtil.GameData?.GameManagerComponents;
+            if (comps != null)
+                for (int i = 0; i < comps.Count; i++)
+                {
+                    var spawner = comps[i]?.TryCast<GameManagerMapTaskSpawnerComponent>();
+                    var active = spawner?.ActiveTasks;
+                    if (active == null) continue;
+                    for (int k = 0; k < active.Count; k++)
+                    {
+                        var inst = active[k];
+                        if (inst == null || inst.TaskInstance == null || inst.TaskInstance.Pointer != task.Pointer) continue;
+                        string addr = inst.taskMetadata?.TaskAddress ?? "";
+                        if (addr.Length == 0) continue;
+                        if (!SpawnedTaskAddresses.ContainsKey(name))
+                            Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Host: task {name} loaded from '{addr}' (spawner).");
+                        SpawnedTaskAddresses[name] = addr;
+                        return addr;
+                    }
+                }
+            if (SpawnedTaskAddresses.TryGetValue(name, out var s)) return s;
+            // The map collection's task list (MapCollectionSO.MapTasks: what the spawner draws from), by prefab name.
+            string fromList = FindTaskAddressInCollection(name);
+            if (fromList.Length > 0)
+            {
+                Plugin.StaticLog.LogInfo($"[SoulstoneCoop][chests] Host: task {name} is '{fromList}' (map collection).");
+                SpawnedTaskAddresses[name] = fromList;
+                return fromList;
+            }
+        }
+        catch (Exception ex) { Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Host: address of task {name}: {ex.Message}"); }
+        return "";
+    }
+
+    /// <summary>1.9.0, host: the running task whose player barrier this is (Modes.CrusadeSync), if any.</summary>
+    internal static MapTask? TaskWithBarrier(IntPtr barrier)
+    {
+        foreach (var t in KnownTasks.Values)
+        {
+            if (t == null) continue;
+            try
+            {
+                var b = t.TryCast<MapKillBossesInAreaTask>()?._playerBarrierInstance
+                        ?? t.TryCast<MapKillElitesInAreaTask>()?._playerBarrierInstance
+                        ?? t.TryCast<MapSurviveForSecondsTask>()?._playerBarrierInstance;
+                if (b != null && b.Pointer == barrier) return t;
+            }
+            catch { }
+        }
+        return null;
+    }
 
     /// <summary>The host's MapTasks (TaskObjectiveSync reads their objectives).</summary>
     internal static IEnumerable<MapTask> HostTasks => KnownTasks.Values;
@@ -270,7 +345,7 @@ public static class ChestSync
                 if (started) _tasksStarted++;
                 Forget(c, opened: started, why: started ? "started" : $"gone (stage {stage})");
             }
-            if (up) TrackTask(kv.Key, task, marker!);
+            if (up && !AddressPending(kv.Key, task)) TrackTask(kv.Key, task, marker!);
         }
         foreach (var p in DeadTasks)
         {
@@ -281,6 +356,50 @@ public static class ChestSync
         TaskScratch.Clear();
         foreach (var c in Tracked.Values) if (c.IsTask && !KnownTasks.ContainsKey(c.Key)) TaskScratch.Add(c);
         foreach (var c in TaskScratch) Forget(c, opened: false, why: "task disabled");
+    }
+
+    /// <summary>1.9.0: the address in Global.MapCollection.MapTasks whose file is this task prefab (exact name first,
+    /// then any address containing it). Both sides have the collection.</summary>
+    internal static string FindTaskAddressInCollection(string taskName)
+    {
+        if (string.IsNullOrEmpty(taskName)) return "";
+        try
+        {
+            var tasks = Global.MapCollection?.MapTasks;
+            if (tasks == null) return "";
+            string contains = "";
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                string addr = tasks[i]?.TaskAddress ?? "";
+                if (addr.Length == 0) continue;
+                string file = addr;
+                int slash = file.LastIndexOf('/');
+                if (slash >= 0) file = file.Substring(slash + 1);
+                int dot = file.LastIndexOf('.');
+                if (dot > 0) file = file.Substring(0, dot);
+                if (string.Equals(file, taskName, StringComparison.OrdinalIgnoreCase)) return addr;
+                if (contains.Length == 0 && addr.IndexOf(taskName, StringComparison.OrdinalIgnoreCase) >= 0) contains = addr;
+            }
+            return contains;
+        }
+        catch (Exception ex)
+        {
+            Plugin.StaticLog.LogWarning($"[SoulstoneCoop][chests] Task address of '{taskName}' in the map collection: {ex.Message}");
+            return "";
+        }
+    }
+
+    private static readonly Dictionary<IntPtr, float> AddressWaitSince = new();
+
+    /// <summary>1.9.0: a marker whose task address isn't known yet (the spawner lists the task right after the marker
+    /// goes up) waits up to 2 s, so the guest's TaskTriggerSpawn carries it.</summary>
+    private static bool AddressPending(IntPtr key, MapTask task)
+    {
+        if (AddressOf(task).Length > 0) { AddressWaitSince.Remove(key); return false; }
+        if (!AddressWaitSince.TryGetValue(key, out float since)) { AddressWaitSince[key] = Time.unscaledTime; return true; }
+        if (Time.unscaledTime - since < 2f) return true;
+        AddressWaitSince.Remove(key);
+        return false;
     }
 
     private static void TrackTask(IntPtr key, MapTask task, InteractableTriggerObject marker)
@@ -294,6 +413,8 @@ public static class ChestSync
             if (meta != null) { address = meta.TaskAddress ?? ""; difficulty = (int)meta.Difficulty; }
         }
         catch { }
+        if (address.Length == 0) address = AddressOf(task); // 1.9.0: Crusade tasks
+        TaskPoses[key] = (marker.transform.position, marker.transform.rotation);
         var c = new Chest
         {
             Id = NextId(),
@@ -886,6 +1007,16 @@ public static class ChestSync
                     found = ResourcesUtil.Load<MapTask>(m.TaskAddress)?.TaskTriggerObjectPrefab?.gameObject;
                     via = "task prefab";
                 }
+                if (found == null && m.TaskAddress.Length == 0 && m.Name.StartsWith("Trigger-"))
+                {
+                    // 1.9.0: an older host (or one that couldn't tell): the task prefab is named like the marker.
+                    string addr = FindTaskAddressInCollection("MapTask-" + m.Name.Substring("Trigger-".Length));
+                    if (addr.Length > 0)
+                    {
+                        found = ResourcesUtil.Load<MapTask>(addr)?.TaskTriggerObjectPrefab?.gameObject;
+                        via = $"map collection '{addr}'";
+                    }
+                }
                 if (found == null) { found = FindLoadedTriggerAsset(m.Name); via = "loaded asset"; }
             }
             else if (m.MetaAddress.Length > 0)
@@ -1082,7 +1213,7 @@ public static class ChestPatches
 
     public static void CompleteTaskPrefix(MapTask __instance)
     {
-        try { ChestSync.CurrentTaskAddress = __instance?.TaskMetadata?.TaskAddress ?? ""; }
+        try { ChestSync.CurrentTaskAddress = ChestSync.AddressOf(__instance); }
         catch { ChestSync.CurrentTaskAddress = ""; }
     }
 

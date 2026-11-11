@@ -37,6 +37,10 @@ public static class SpecialsDebug
                 if (f7 && !_prevF7) Modes.MasterySync.DebugSkipToFinal();
                 if (f8 && !_prevF8) Modes.MasterySync.DebugKillMainBoss();
             }
+            else if (Modes.CrusadeSync.IsCrusade)
+            {
+                // 1.9.0, Crusade: F7 opens the map selection, F8 skips to the boss door (both in Modes.CrusadeSync).
+            }
             else
             {
                 if (f7 && !_prevF7) SpawnSpecials();

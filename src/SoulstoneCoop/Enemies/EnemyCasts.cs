@@ -33,6 +33,7 @@ public static class EnemyCasts
     private static float _telemetryTimer;
     private static int _sent, _bytes, _throttled, _hostSkippedSummon, _captureErrors;
     private static int _recv, _played, _noPuppet, _noSkill, _inactive, _rejected, _errors, _skippedSummon;
+    private static int _casterFixed; // 1.9.0
     private static int _blockedDamage, _blockedStatus, _blockedPush, _blockedGodProxy;
 
     internal static void CountBlockedDamage() => _blockedDamage++;
@@ -174,6 +175,21 @@ public static class EnemyCasts
             if ((flags & CastMessage.FFrontFunc) != 0) p.GetTargetFrontPosition = (Func<Skill, Vector3>)(_ => frontPoint);
             if ((flags & CastMessage.FGroundFunc) != 0) p.GetTargetFrontPositionGround = (Func<Skill, Vector3>)(_ => groundPoint);
 
+            // 1.9.0: a boss puppet's charged area skill (SkillChargingTimeTraitAreaBase, e.g. the Sandscale General's
+            // GroundBash) threw a NullReferenceException in its Activate on the guest: it reads Skill.CasterEntity and
+            // Skill.RadiusTrait. The caster is ours to set; without a radius the telegraph can't be drawn: skip it.
+            if (skill.CasterEntity == null)
+            {
+                skill.CasterEntity = e;
+                if (_casterFixed++ == 0) Plugin.StaticLog.LogInfo($"[SoulstoneCoop][enemycasts] Client: '{key}' on '{puppet.Key}' had no CasterEntity - set to the puppet.");
+            }
+            if (skill.ChargingTrait != null && skill.ChargingTrait.TryCast<SkillChargingTimeTraitAreaBase>() != null && skill.RadiusTrait == null)
+            {
+                _rejected++;
+                if (LoggedKeys.Add(puppet.Key + "|" + key + "|noradius"))
+                    Plugin.StaticLog.LogWarning($"[SoulstoneCoop][enemycasts] Client: '{key}' on '{puppet.Key}' has a charged area but no RadiusTrait - not replayed.");
+                return;
+            }
             // IgnoreAll: no cooldown / busy / combat checks, no procs or extra multicasts.
             bool ok = caster.CastSkill(skill, p, SkillActivationOptions.IgnoreAll);
             if (ok) _played++;

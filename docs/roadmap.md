@@ -70,6 +70,7 @@ Fonte única das próximas fases e pendências. Detalhes técnicos de cada fase 
 | Baús | Voz de "abrindo baú" / "minerando" do personagem do convidado (`baus-notas.md`) | — |
 | Desempenho | Falhas de busca de prefab (invocações, passivas, inimigos, ascensão) não se repetem a cada spawn; material dos marcadores reaproveitado (`desempenho-notas.md`) | — |
 | Ascensão | Troca de skin com o parceiro ascendido apaga os modelos velhos; acréscimo do Legionnaire procurado de novo se o componente chega depois (`ascensao-notas.md`, `desempenho-notas.md`) | — |
+| **1.9.0** | Cruzada: Lutar liberado (`RunStart` leva dificuldade, nível dinâmico e mapa final); o host escolhe o mapa e todos vão (`CrusadeTransition = 160`, prefixo do `GameManagerUtil.LoadNextScene`); portais do convidado viram pedido ao host (`161`, `162`); tarefas do mapa com marcador no convidado, anel que não prende e reinício da área vazia (`163`, `164`, `[Coop] TaskAreaEmptySeconds`); sala do chefe: porta, fragmentos, objetivos, apresentação e chefes do host (`165`, `167`, `168`); lobby: runas e portal (`169`, `170`); painéis do mod escondidos em cenas de chefe; F7 (escolha de mapa) e F8 (porta do chefe) (`cruzada-investigacao.md`) | — |
 | **1.8.0** | Modo Mastery: chefe principal do host no convidado, runa do host (convidado na runa enche a do host), kills e ciclos, vitória e portal Home (`MasteryState = 150`, `MasteryRunePresence = 151`); fases do chefe (introdução, arena, morte) tocadas no convidado (`MasteryBossPhase = 152`); F7/F8 no Mastery (`mastery-notas.md`) | — |
 | **1.7.0** | Merge do PR #9 no upstream; reconexão numa run/estágio velho, convidado que cai ainda conta como vivo/caído por 45 s, pacotes repassados com limites (`reentrada-notas.md`) | `757b942` |
 | **1.6.2** | Teclas de teste (F1-F3, F5-F11, Insert, Delete, PageDown) só com `[Debug] TestKeys` ou `--coop-test-keys` (o `tools/test-local` passa); antes valiam em toda sessão co-op, e Insert/Delete/PageDown até no solo | — |
@@ -102,7 +103,7 @@ A **1.7.0** é a versão publicada (upstream `gskolber`, com o PR #9). A **1.8.0
 | BossRush (portal vermelho, `SurvivorsBossRoomGameManager`) | Espelhado (chefes, vitória, portais); só testado forçando com F10 + Shift+F5 num PC |
 | Reiniciar | Funciona para todos |
 | Mastery (`MasteryGameManager`) | 1.8.0: chefe principal (introdução, arena, morte), runa, ciclos, pilares, vitória e portal sincronizados; testado num PC. Falta: efeito de canalizar o chefe do parceiro na arena |
-| Crusade (lobby, caverna dos goblins) | Bloqueada no Lutar (`nt.crusade`) |
+| Crusade (lobby, caverna dos goblins) | 1.9.0: lobby (runas, portal), troca de mapas (o host escolhe, todos vão), tarefas do mapa (uma por jogador, reinício da área vazia), sala do chefe (objetivos, porta, apresentação, chefes); testada num PC. Falta: sangue de titã e portais de saída depois do chefe, caverna, chefe final (`cruzada-investigacao.md`) |
 
 ## Próximos itens
 
@@ -114,7 +115,7 @@ Em ordem de prioridade.
 | 2 | BossRush e Endless chegando de verdade (sem F10/F5), pela Steam | Só testados forçados num PC | pequeno (teste) |
 | 3 | Desistir e voltar com Lutar (ou voltar depois de o host trocar de estágio) mantém a build | Desligada na 1.6.1 (e o `RejoinProgress` removido depois do PR #9): a foto usava `GameModeBaseData.SetDataBasedOnPlayerEntity` (0x4FF600), que é a passagem de estágio do jogo (grava o perfil, troca o `InventoryData` do jogador). Precisa de uma foto própria, só de leitura (nível, upgrades, runas, itens), e de reaplicar sem o caminho de estágio (`reentrada-notas.md`) | médio |
 | 4 | Power-ups "ao esquivar" do convidado | Desde a 1.6.1 a esquiva acontece no proxy do convidado, no host; o `PassiveSkillsComponent` do convidado (`HasSkillOnDashDodge`, `SkillOnDashDodgePowerUpSO`) nunca fica sabendo. Caminho: o host avisa quando um hit no proxy sai com `IsDashDodged`, e o convidado dispara o próprio efeito (`pendencias-notas.md`, "1.6.1") | pequeno a médio |
-| 5 | Modo Crusade | Começa num lobby e troca de mapa no meio; portas e baús já têm base (`fase6-notas.md`, `portais-notas.md`, `proximos-investigacao.md` §6) | grande |
+| 5 | Modo Crusade: depois do chefe do mapa, caverna, chefe final | Na 1.9.0: lobby, troca de mapas, tarefas e sala do chefe. Faltam o sangue de titã e os portais de saída para todos, os baús da caverna dos goblins e o chefe final; plano em `cruzada-investigacao.md` | médio a grande |
 
 **Problema conhecido, parado por decisão:** cristais giratórios do Machinist no parceiro. NRE mais adiante no `DoActivate` da réplica, depois do pool da projectile skill; o `FieldDump` mostrou os campos checados no começo todos preenchidos (`sempre-ligadas-notas.md`).
 

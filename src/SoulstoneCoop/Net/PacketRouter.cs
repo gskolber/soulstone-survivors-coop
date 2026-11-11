@@ -61,6 +61,17 @@ public enum PacketType : byte
     RewardPresence = 133, // client -> host: the client's player stands on (1) / left (0) chest id u16 (ReliableOrdered)
     MasteryBossPhase = 152, // host -> clients, 1.8.0: the main boss started a phase transition (intro, portal...): kind u8 (0 initial, 1 intermediate, 2 final) | index u8 (ReliableOrdered)
     MasteryRunePresence = 151, // guest -> host, 1.8.0: our player is on (1) / off (0) the Mastery rune, on change + every 1 s while on (ReliableOrdered)
+    CrusadeRunePresence = 170, // guest -> host, 1.9.0: our player is on/off a Crusade lobby titan blood rune: index u8 | on u8 (ReliableOrdered)
+    CrusadeLobbyState = 169, // host -> clients, 1.9.0: Crusade lobby: portal taken u8 | runes u8 | runes * (on u8 | timer f32 | active u8), on change + every 2 s (ReliableOrdered)
+    CrusadeTriggerPresence = 168, // guest -> host, 1.9.0: our player is on/off the Crusade boss door (0) or room entrance (1): which u8 | on u8 (ReliableOrdered)
+    CrusadeMapState = 167,   // host -> clients, 1.9.0: key fragments i32 | door state u8 | door time f32 | room state u8 | room time f32 | kill id str | total i32 | current i32, on change + every 2 s (ReliableOrdered)
+    CrusadeDebugJump = 166,  // host -> clients, 1.9.0 test key F8 (Crusade): go to the boss door: pos 3f (ReliableOrdered)
+    CrusadeDoorState = 165,  // host -> clients, 1.9.0: the Crusade boss door's holders active u8 (1 colliders, 2 room obstacles, 4 arena obstacles), on change + every 3 s (ReliableOrdered)
+    TaskAreaCountdown = 164, // host -> clients, 1.9.0: a running task's area is empty: seconds left u8 | reset u8 (0 s: it went back to its marker) (ReliableOrdered)
+    CrusadeBarrier = 163,    // host -> clients, 1.9.0: a Crusade player barrier (task area, boss room) went up/down: id u16 | on u8 | free u8 (task area: holds nobody) | name str | task address str | pos 3f | rot 4f | center 3f | radius f32 (ReliableOrdered)
+    CrusadeChoosing = 162,   // host -> clients, 1.9.0: the host's Crusade map selection just opened (no payload) (ReliableOrdered)
+    CrusadePortalRequest = 161, // guest -> host, 1.9.0: our player walked into a Crusade portal: portal u8 (Modes.CrusadePortal) (ReliableOrdered)
+    CrusadeTransition = 160, // host -> clients, 1.9.0: the host's Crusade scene change: map str | delay f32 | clearLoad u8 | viaPanel u8 | run id i32 | stage i32 (ReliableOrdered)
     MasteryState = 150,   // host -> clients, 1.8.0: Mastery match: cycle i32 | cycles i32 | rune triggers i32 | main boss net id u16 | kills 3 x i32, on change + every 2 s (ReliableOrdered)
     TaskObjective = 135,    // host -> clients: running map tasks' objectives: count u8 | count * (id u16 | kind u8 | objectiveId str | total f32 | current f32 | flags u8), 2 Hz (ReliableOrdered)
     TaskTriggerSpawn = 134, // host -> clients: a map task's start marker is up: id u16 (shared with chests) | marker name, task address (str) | difficulty u8 | pos 3f | rot 4f | progress f32 | players u8 (ReliableOrdered)
@@ -281,6 +292,39 @@ public static class PacketRouter
                 break;
             case PacketType.MasteryRunePresence:
                 Modes.MasterySync.OnRunePresence(reader);
+                break;
+            case PacketType.CrusadeTransition:
+                Modes.CrusadeSync.OnTransition(reader);
+                break;
+            case PacketType.CrusadePortalRequest:
+                Modes.CrusadeSync.OnPortalRequest(reader);
+                break;
+            case PacketType.CrusadeChoosing:
+                Modes.CrusadeSync.OnChoosing(reader);
+                break;
+            case PacketType.CrusadeBarrier:
+                Modes.CrusadeSync.OnBarrier(reader);
+                break;
+            case PacketType.TaskAreaCountdown:
+                Modes.CrusadeSync.OnTaskAreaCountdown(reader);
+                break;
+            case PacketType.CrusadeDoorState:
+                Modes.CrusadeSync.OnDoorState(reader);
+                break;
+            case PacketType.CrusadeDebugJump:
+                Modes.CrusadeSync.OnDebugJump(reader);
+                break;
+            case PacketType.CrusadeMapState:
+                Modes.CrusadeSync.OnMapState(reader);
+                break;
+            case PacketType.CrusadeTriggerPresence:
+                Modes.CrusadeSync.OnTriggerPresence(reader);
+                break;
+            case PacketType.CrusadeLobbyState:
+                Modes.CrusadeSync.OnLobbyState(reader);
+                break;
+            case PacketType.CrusadeRunePresence:
+                Modes.CrusadeSync.OnRunePresence(reader);
                 break;
             case PacketType.LootDrop:
                 Loot.LootSync.OnLootDrop(reader);
