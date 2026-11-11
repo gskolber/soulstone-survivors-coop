@@ -281,6 +281,7 @@ internal static class PartyHud
             if (ui != null && ui.ForceHideGameplayElements) return false; // the game hides its own HUD (cutscene, boss intro)
         }
         catch { }
+        if (Cutscene.Running) return false; // 1.9.0: Crusade boss presentation, Mastery boss phases
         return true;
     }
 

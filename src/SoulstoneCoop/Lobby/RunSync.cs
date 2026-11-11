@@ -30,6 +30,9 @@ public static class RunSync
         public int RunId;                    // 1.4: which run (new on Fight/Restart, kept across stages)
         public bool Rejoin;                  // 1.4: the host's AllowRejoin (guests keep their build for a comeback)
         public int Stage;                    // which stage of that run (0 at Fight/Restart, +1 per Endless/BossRush portal)
+        public int CrusadeTier;              // 1.9.0: Global.CrusadeDifficultyTier (SigilDifficultyTierType)
+        public int CrusadeLevel;             // 1.9.0: Global.CrusadeDynamicLevel
+        public bool CrusadeFinal;            // 1.9.0: Global.CrusadeIsFinalBossMap
     }
 
     private static RunParams? _clientRun;      // client: the host's run we're loading into (affix override)
@@ -85,11 +88,6 @@ public static class RunSync
         }
         if (role == NetRole.Host && CoopSession.Connected)
         {
-            if (mode == GameModes.Crusade)
-            {
-                CoopSession.Notice(Ui.Loc.Msg("nt.crusade"));
-                return false;
-            }
             var away = CoopSession.NamesWhere(r => r.Place != LobbyPlace.Menu);
             if (away.Length > 0)
             {
@@ -169,6 +167,9 @@ public static class RunSync
             RunId = _hostRun.RunId,
             Rejoin = _hostRun.Rejoin,
             Stage = _hostRun.Stage + 1,
+            CrusadeTier = _hostRun.CrusadeTier,
+            CrusadeLevel = _hostRun.CrusadeLevel,
+            CrusadeFinal = _hostRun.CrusadeFinal,
         };
         p.Affixes.AddRange(_hostRun.Affixes);
         _hostRun = p;
@@ -235,6 +236,9 @@ public static class RunSync
             MasteryLevel = Global.MasteryDynamicLevel,
             RunId = UnityEngine.Random.Range(1, int.MaxValue),
             Rejoin = Plugin.AllowRejoin.Value,
+            CrusadeTier = (int)Global.CrusadeDifficultyTier,
+            CrusadeLevel = Global.CrusadeDynamicLevel,
+            CrusadeFinal = Global.CrusadeIsFinalBossMap,
         };
         if (p.Mode == GameModes.Survivor)
         {
@@ -258,6 +262,9 @@ public static class RunSync
         w.Put(p.RunId);
         w.Put(p.Rejoin);
         w.Put(p.Stage);
+        w.Put(p.CrusadeTier);
+        w.Put(p.CrusadeLevel);
+        w.Put(p.CrusadeFinal);
     }
 
     private static RunParams ReadParams(NetDataReader r)
@@ -275,11 +282,14 @@ public static class RunSync
         p.RunId = r.GetInt();
         p.Rejoin = r.GetBool();
         p.Stage = r.GetInt();
+        p.CrusadeTier = r.GetInt();
+        p.CrusadeLevel = r.GetInt();
+        p.CrusadeFinal = r.GetBool();
         return p;
     }
 
     private static string Describe(RunParams p) =>
-        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} affixes=[{string.Join(",", p.Affixes)}] run={p.RunId}/{p.Stage}";
+        $"scene={p.Scene} mode={p.Mode} mastery={p.MasteryTier}/{p.MasteryLevel} crusade={p.CrusadeTier}/{p.CrusadeLevel}{(p.CrusadeFinal ? "/final" : "")} affixes=[{string.Join(",", p.Affixes)}] run={p.RunId}/{p.Stage}";
 
     // =====================================================================================
     // Client: follow the host
@@ -392,6 +402,9 @@ public static class RunSync
         Global.SelectedGameMode = p.Mode;
         Global.MasteryDifficultyTier = p.MasteryTier;
         Global.MasteryDynamicLevel = p.MasteryLevel;
+        Global.CrusadeDifficultyTier = (SigilDifficultyTierType)p.CrusadeTier; // 1.9.0: the lobby's CrusadeData comes from these
+        Global.CrusadeDynamicLevel = p.CrusadeLevel;
+        Global.CrusadeIsFinalBossMap = p.CrusadeFinal;
         _clientRun = p;
         _clientRunId = p.RunId;
         _clientStage = p.Stage;
@@ -488,6 +501,7 @@ public static class RunSync
             return false;
         }
         if (panel.RequestedGoToMenu) return true; // the game ignores the click anyway
+        // 1.9.0: a Crusade run goes through the lobby (RunStart from the Fight); its Restart isn't followed yet.
         if (Global.SelectedGameMode == GameModes.Crusade)
         {
             CoopSession.Notice(Ui.Loc.Msg("nt.crusade_menu"));
@@ -696,6 +710,15 @@ public static class CrusadeFightPatch
         try { if (!RunSync.AllowFight(GameModes.Crusade)) { __result = false; return false; } }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CrusadeFightPatch.Prefix: {ex}"); }
         return true;
+    }
+
+    /// <summary>1.9.0: the Fight loads the Crusade lobby (CrusadeConfigSO.MapId) after writing the tier and level to Global.</summary>
+    [HarmonyPostfix]
+    public static void Postfix(MapSelectionCrusadeScreenPanel __instance, bool __result)
+    {
+        if (!__result) return;
+        try { RunSync.AfterHostFight(__instance._gameModeConfig?.MapId); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CrusadeFightPatch.Postfix: {ex}"); }
     }
 }
 

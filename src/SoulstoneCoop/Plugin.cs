@@ -12,7 +12,7 @@ public class Plugin : BasePlugin
     public const string PluginGuid = "com.kolber.soulstonecoop";
     public const string PluginName = "Soulstone Coop";
     // Checked in the connection handshake (phase 6): host and client must match exactly.
-    public const string PluginVersion = "1.7.0";
+    public const string PluginVersion = "1.9.0";
 
     internal static ManualLogSource StaticLog = null!;
     internal static BepInEx.Configuration.ConfigEntry<bool> AutoHost = null!;
@@ -27,6 +27,7 @@ public class Plugin : BasePlugin
     internal static BepInEx.Configuration.ConfigEntry<float> EnemyScalePerPlayer = null!;
     internal static BepInEx.Configuration.ConfigEntry<float> ReplicaCastRadius = null!;
     internal static BepInEx.Configuration.ConfigEntry<float> ChestOpenBonusPerPlayer = null!;
+    internal static BepInEx.Configuration.ConfigEntry<float> TaskAreaEmptySeconds = null!; // 1.9.0
 
     /// <summary>Phase 9: who may join the Steam lobby ([Coop] LobbyType).</summary>
     public enum SteamLobbyType { FriendsOnly, Public, Private }
@@ -82,6 +83,11 @@ public class Plugin : BasePlugin
             "Host: chests and ore open faster with more players standing on them: + this much speed for each extra player " +
             "(0.5: 2 players x1.5, 3 players x2, at most x3). 0 = the same speed as alone.",
             new BepInEx.Configuration.AcceptableValueRange<float>(0f, 2f)));
+        TaskAreaEmptySeconds = Config.Bind("Coop", "TaskAreaEmptySeconds", 5f, new BepInEx.Configuration.ConfigDescription(
+            "Host, Crusade map tasks: the ring around a running task doesn't hold anyone in co-op. When nobody is inside it, " +
+            "this many seconds count down (paused while someone is back in, never refilled); at 0 the task goes back to its " +
+            "marker and its enemies are removed.",
+            new BepInEx.Configuration.AcceptableValueRange<float>(1f, 60f)));
         _simLatency = simLatency.Value;
         _simJitter = simJitter.Value;
         _simLoss = simLoss.Value;

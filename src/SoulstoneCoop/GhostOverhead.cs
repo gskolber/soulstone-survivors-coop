@@ -144,7 +144,7 @@ public static class GhostOverhead
 
     private static void UpdateOverhead(View v, GameObject? ghost)
     {
-        if (v.Panel == null || ghost == null || !CoopSession.LocalInRun || Time.timeScale < 0.01f)
+        if (v.Panel == null || ghost == null || !CoopSession.LocalInRun || Time.timeScale < 0.01f || Ui.Cutscene.Running)
         {
             SetVisible(v, false);
             return;

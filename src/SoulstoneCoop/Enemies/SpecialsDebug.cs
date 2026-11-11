@@ -31,8 +31,21 @@ public static class SpecialsDebug
         }
         try
         {
-            if (f7 && !_prevF7) SpawnSpecials();
-            if (f8 && !_prevF8) ForceBoss();
+            if (Modes.MasterySync.Manager != null)
+            {
+                // 1.8.0, Mastery match: F7 runs through the cycles to the main boss, F8 kills it (victory).
+                if (f7 && !_prevF7) Modes.MasterySync.DebugSkipToFinal();
+                if (f8 && !_prevF8) Modes.MasterySync.DebugKillMainBoss();
+            }
+            else if (Modes.CrusadeSync.IsCrusade)
+            {
+                // 1.9.0, Crusade: F7 opens the map selection, F8 skips to the boss door (both in Modes.CrusadeSync).
+            }
+            else
+            {
+                if (f7 && !_prevF7) SpawnSpecials();
+                if (f8 && !_prevF8) ForceBoss();
+            }
         }
         catch (Exception ex)
         {

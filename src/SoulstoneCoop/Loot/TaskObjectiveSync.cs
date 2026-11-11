@@ -27,7 +27,7 @@ namespace SoulstoneCoop.Loot;
 public static class TaskObjectiveSync
 {
     private const byte KindTimer = 1, KindKill = 2;
-    private const byte FlagCountDown = 1, FlagDone = 2;
+    private const byte FlagCountDown = 1, FlagDone = 2, FlagFailed = 4; // 1.9.0: failed = the task went back to its marker
     private const float SendInterval = 0.5f;
     private const float StaleAfter = 5f;
 
@@ -41,7 +41,7 @@ public static class TaskObjectiveSync
 
     // ---------------- host ----------------
 
-    private sealed class HostTask { public ushort Id; public bool Running; }
+    private sealed class HostTask { public ushort Id; public bool Running; public MapTask? Task; }
 
     private static readonly Dictionary<IntPtr, HostTask> HostIds = new();
     private static readonly List<Entry> Out = new();
@@ -87,7 +87,7 @@ public static class TaskObjectiveSync
             if (!TryRead(task, out var e)) continue;
             if (!HostIds.TryGetValue(task.Pointer, out var h))
             {
-                h = new HostTask { Id = _nextId++ };
+                h = new HostTask { Id = _nextId++, Task = task };
                 if (_nextId == 0) _nextId = 1;
                 HostIds[task.Pointer] = h;
                 Plugin.StaticLog.LogInfo($"[SoulstoneCoop][taskobj] Host: task objective #{h.Id} '{e.ObjectiveId}' ({(e.Kind == KindTimer ? "timer" : "kill")}, total {e.Total:F0}).");
@@ -99,7 +99,14 @@ public static class TaskObjectiveSync
         foreach (var kv in HostIds)
         {
             if (kv.Value.Running) continue;
-            Out.Add(new Entry { Id = kv.Value.Id, Kind = 0, Flags = FlagDone, ObjectiveId = "" });
+            byte flags = FlagDone;
+            try
+            {
+                var t = kv.Value.Task;
+                if (t != null && t.Stage != MapTaskCompletionStage.Completed) flags |= FlagFailed; // reset / cancelled
+            }
+            catch { }
+            Out.Add(new Entry { Id = kv.Value.Id, Kind = 0, Flags = flags, ObjectiveId = "" });
             Dead.Add(kv.Key);
         }
         foreach (var p in Dead) HostIds.Remove(p);
@@ -223,13 +230,14 @@ public static class TaskObjectiveSync
             s.Kill.Total = Mathf.RoundToInt(e.Total);
             s.Kill.Current = Mathf.RoundToInt(e.Current);
         }
-        if (done) Finish(e.Id, s);
+        if (done) Finish(e.Id, s, (e.Flags & FlagFailed) != 0);
     }
 
-    private static void Finish(ushort id, Shown s)
+    private static void Finish(ushort id, Shown s, bool failed = false)
     {
         try
         {
+            if (failed && s.Objective != null) { s.Objective.Failed = true; Local.Remove(id); return; }
             if (s.Timer != null) { s.Timer.CurrentTimeInSeconds = s.Timer.TotalTimeInSeconds; s.Timer.Completed = true; }
             if (s.Kill != null) s.Kill.Current = s.Kill.Total;
         }

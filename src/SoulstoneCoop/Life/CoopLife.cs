@@ -754,6 +754,7 @@ public static class CoopLife
         var obj = sgm != null ? sgm.MainObjective : null;
         if (obj == null)
         {
+            if (sgm == null && Modes.MasterySync.ForceVictory()) return; // 1.8.0: Mastery's main boss objective
             if (sgm == null && CompleteBossRoomProgress(data)) return;
             Plugin.StaticLog.LogWarning("[SoulstoneCoop][life] Victory: no MainObjective on this side.");
             return;
@@ -1002,6 +1003,7 @@ public static class CoopLife
             if (data.EnterPortalObjective != null) return true;
             // RunEnd(Victory) applied, the game's victory branch (which opens the portal) still on its way.
             var obj = data.SurvivorsGameManager != null ? data.SurvivorsGameManager.MainObjective : null;
+            if (data.SurvivorsGameManager == null && Modes.MasterySync.VictoryReached() is bool mastery) return mastery; // 1.8.0
             if (obj == null && data.SurvivorsGameManager == null)
             {
                 // BossRush map (SurvivorsBossRoomGameManager): its victory is GetMapProgress() >= 1.
@@ -1139,6 +1141,7 @@ public static class CoopLife
     {
         var data = GameManagerUtil.GameData;
         var obj = data != null && data.SurvivorsGameManager != null ? data.SurvivorsGameManager.MainObjective : null;
+        if (obj == null && data != null && data.SurvivorsGameManager == null && Modes.MasterySync.DebugVictory()) return; // 1.8.0
         if (obj == null && data != null && data.SurvivorsGameManager == null && CompleteBossRoomProgress(data)) return;
         if (obj == null) { Plugin.StaticLog.LogWarning("[SoulstoneCoop][life] F10: no MainObjective yet."); return; }
         Plugin.StaticLog.LogInfo($"[SoulstoneCoop][life] F10: forcing the boss objective ({obj.Current}/{obj.Total}).");

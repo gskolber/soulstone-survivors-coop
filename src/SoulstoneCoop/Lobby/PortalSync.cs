@@ -162,7 +162,17 @@ public static class PortalSync
         var sgm = GameManagerUtil.GameData?.SurvivorsGameManager;
         if (sgm != null) { sgm.OnPlayerEnterPortal(); return true; }
         var room = BossRoom();
-        if (room == null) return false;
+        if (room == null)
+        {
+            // 1.8.0: the Mastery map's own Home portal.
+            var mm = Modes.MasterySync.Manager;
+            if (mm != null) { mm.OnPlayerEnterPortal(); return true; }
+            // 1.9.0: a Crusade map's Home portal.
+            var cm = Modes.CrusadeSync.MapManager;
+            if (cm == null) return false;
+            cm.OnPlayerEnterHomePortal();
+            return true;
+        }
         room.OnPlayerEnterPortal();
         return true;
     }
@@ -417,6 +427,7 @@ public static class PortalSync
         Enemies.ObjectiveSync.ResetForNewScene();
         Summons.SummonSync.OnLocalSceneGone();
         Loot.ChestSync.OnLocalSceneGone();
+        Modes.CrusadeSync.OnLocalSceneGone();
     }
 }
 
