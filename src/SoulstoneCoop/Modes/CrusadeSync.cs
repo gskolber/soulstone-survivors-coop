@@ -1022,6 +1022,7 @@ public static class CrusadeSync
     private static float _hDoorTime, _hRoomTime;
     private static string _hKillId = "";
     private static bool _onDoorSent, _onRoomSent;
+    private static bool _localOnDoor, _localOnRoom; // guest: our player inside the trigger (its OnTriggerEnter / Exit)
     private static EliminateSpecificEntitiesObjective? _killCopy;
     private static int _stateRecv, _killCopies, _proxyDriven;
 
@@ -1034,6 +1035,7 @@ public static class CrusadeSync
         _lastRoomState = 0;
         _hFragments = -1; _hDoorState = _hRoomState = 0; _hKillTotal = -1; _hKillCurrent = 0; _hKillId = "";
         _onDoorSent = _onRoomSent = false;
+        _localOnDoor = _localOnRoom = false;
         _killCopy = null;
     }
 
@@ -1131,11 +1133,14 @@ public static class CrusadeSync
             var inward = roomPos - doorPos;
             inward.y = 0f;
             if (inward.sqrMagnitude < 0.01f) return;
+            // Inside = past the room's entrance trigger (the gate closes between the door trigger and it: sixth test,
+            // a guest standing on the door trigger, just past its middle, was taken for inside and stayed out).
             var p = local.transform.position;
-            var rel = p - doorPos;
+            var rel = p - roomPos;
             rel.y = 0f;
-            bool inside = Vector3.Dot(rel, inward) > 0f;
-            if (inside) { Log($"{who}: the boss room closed with us inside."); return; }
+            float depth = Vector3.Dot(rel, inward.normalized);
+            bool inside = depth > 0.5f;
+            if (inside) { Log($"{who}: the boss room closed with us inside ({depth:F1} u past its entrance)."); return; }
             var to = roomPos + inward.normalized * 3f;
             to.y = p.y;
             TeleportLocal(to, $"{who}: the boss room closed with us outside");
@@ -1157,8 +1162,7 @@ public static class CrusadeSync
         {
             if (!CoopSession.Connected) return true;
             var local = GameState.LocalPlayerEntity;
-            var cur = trig.InteractingEntity;
-            bool onIt = cur != null && local != null && cur.Pointer == local.Pointer;
+            bool onIt = which == TriggerDoor ? _localOnDoor : _localOnRoom;
             ref bool sent = ref (which == TriggerDoor ? ref _onDoorSent : ref _onRoomSent);
             if (onIt != sent)
             {
@@ -1171,15 +1175,31 @@ public static class CrusadeSync
             }
             int state = which == TriggerDoor ? _hDoorState : _hRoomState;
             float time = which == TriggerDoor ? _hDoorTime : _hRoomTime;
+            if (state == 2)
+            {
+                // Done on the host: done here, and its progress ring goes (sixth test: it stayed on, through the boss
+                // presentation, under a guest who had stood on the door).
+                trig.State = InteractableTriggerState.Triggered;
+                trig.TimeInteracting = trig.InteractionTime;
+                trig.InteractingEntity = null;
+                trig.InteractingEntityTargetTransform = null;
+                var bar = trig.ProgressBarRenderer;
+                if (bar != null && bar.enabled) bar.enabled = false;
+                return false;
+            }
+            // Not done: the game's own OnUpdate draws the ring, with the host's progress, and never finishes here.
+            bool someone = state == 1 || onIt;
             trig.State = (InteractableTriggerState)state;
-            trig.TimeInteracting = state == 2 ? trig.InteractionTime : Mathf.Min(time, trig.InteractionTime * 0.97f);
-            // The door fires void fragments from InteractingEntity while it's being opened: none from an empty one.
-            if (which == TriggerDoor && cur == null)
+            trig.InteractingEntity = someone ? local : null;
+            trig.InteractingEntityTargetTransform = someone && local != null ? local.transform : null;
+            trig.TimeInteracting = Mathf.Max(0f, Mathf.Min(time, trig.InteractionTime * 0.97f) - Time.deltaTime);
+            // The door fires void fragments from InteractingEntity while it's being opened: only from us when we're on it.
+            if (which == TriggerDoor && !onIt)
             {
                 var door = Door();
                 if (door != null) door._lastTimeFiredProjectile = Time.time;
             }
-            return false;
+            return true;
         }
         if (NetworkManager.Role != NetRole.Host) return true;
         var set = which == TriggerDoor ? OnDoor : OnRoom;
@@ -1209,6 +1229,20 @@ public static class CrusadeSync
             trig.InteractingEntityTargetTransform = null;
         }
         return true;
+    }
+
+    /// <summary>Postfix of InteractableOneTimeTrigger.OnTriggerEnter / OnTriggerExit, guest: our own player in / out of
+    /// the boss door or room entrance (InteractingEntity can't tell: the guest's copy shows the host's progress with it).</summary>
+    internal static void OnDoorTriggerContact(InteractableOneTimeTrigger trig, Collider other, bool enter)
+    {
+        if (NetworkManager.Role != NetRole.Client || trig == null || other == null) return;
+        var ptr = trig.Pointer;
+        if (ptr == IntPtr.Zero || (ptr != _doorTrigPtr && ptr != _roomTrigPtr)) return;
+        var local = GameState.LocalPlayerEntity;
+        var rb = other.attachedRigidbody;
+        var e = rb != null ? rb.GetComponent<Entity>() : null;
+        if (local == null || e == null || e.Pointer != local.Pointer) return;
+        if (ptr == _doorTrigPtr) _localOnDoor = enter; else _localOnRoom = enter;
     }
 
     public static void OnTriggerPresence(NetDataReader r)
@@ -1584,6 +1618,28 @@ public static class CrusadeDoorTriggerPatch
     {
         try { return CrusadeSync.DoorTriggerPrefix(__instance); }
         catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CrusadeDoorTriggerPatch: {ex.Message}"); return true; }
+    }
+}
+
+[HarmonyPatch(typeof(InteractableOneTimeTrigger), nameof(InteractableOneTimeTrigger.OnTriggerEnter))]
+public static class CrusadeDoorTriggerEnterPatch
+{
+    [HarmonyPostfix]
+    public static void Postfix(InteractableOneTimeTrigger __instance, Collider other)
+    {
+        try { CrusadeSync.OnDoorTriggerContact(__instance, other, true); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CrusadeDoorTriggerEnterPatch: {ex.Message}"); }
+    }
+}
+
+[HarmonyPatch(typeof(InteractableOneTimeTrigger), nameof(InteractableOneTimeTrigger.OnTriggerExit))]
+public static class CrusadeDoorTriggerExitPatch
+{
+    [HarmonyPostfix]
+    public static void Postfix(InteractableOneTimeTrigger __instance, Collider other)
+    {
+        try { CrusadeSync.OnDoorTriggerContact(__instance, other, false); }
+        catch (Exception ex) { Plugin.StaticLog.LogError($"[SoulstoneCoop] CrusadeDoorTriggerExitPatch: {ex.Message}"); }
     }
 }
 

@@ -147,3 +147,9 @@ O que o co-op faz agora (`CrusadeMapState = 167`, `CrusadeTriggerPresence = 168`
 - fases do chefe principal do Mastery (`MasterySync.BossCutsceneRunning`).
 
 O popup de nível fica parado (o `OnUpdate` não roda e o `Canvas` dele é desligado) e abre de novo quando a cena acaba.
+
+### Sexto teste (1.9.0)
+
+Os dois viram a apresentação do chefe. Dois problemas, corrigidos:
+- **Convidado preso fora da arena.** Ele estava em cima do gatilho da porta, um pouco depois do centro dele, e o teste "lado da porta" o deu como dentro (log `the boss room closed with us inside`), mas a grade fecha entre o gatilho da porta e o da entrada. Agora "dentro" é passar da entrada (`BossRoomTrigger`) por mais de 0,5 u na direção porta → entrada, e o log mostra a distância.
+- **Anel de progresso do convidado sobre a cena.** O gatilho da porta do convidado pulava o `OnUpdate` e ficava com o anel ligado depois de pronto. Agora, pronto no host: o do convidado fica `Triggered`, sem `InteractingEntity`, e com o `ProgressBarRenderer` desligado. Antes disso o `OnUpdate` do jogo roda, com o progresso do host limitado a 97% (o anel é desenhado pelo próprio jogo, como nos baús). Se o convidado está em cima, agora isso vem do `OnTriggerEnter`/`Exit` do gatilho, não do `InteractingEntity`, que mostra o progresso do host.
